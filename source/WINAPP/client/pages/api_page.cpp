@@ -120,7 +120,6 @@ void ApiPage::DrawTable(float x, float y, float w, float /*h*/) {
     float ry = hy + 28;
     for (const auto& k : m_keys) {
         float rowH = 38.0f;
-        m_row_rects.push_back({ry, ry + rowH, k.id, false, false});
 
         // Alternating row bg
         bool even = (&k - m_keys.data()) % 2 == 0;
@@ -175,9 +174,7 @@ void ApiPage::DrawTable(float x, float y, float w, float /*h*/) {
         dc->FillRoundedRectangle(D2D1::RoundedRect(rb, 4, 4),
             m_ctx.BrushSolid({0.18f,0.30f,0.44f,1}));
         m_ctx.DrawText(L"↻", rb, kBlue, 11.0f, true);
-        m_row_rects.back().is_rotate = false; // rotation rect stored separately
-        m_row_rects.push_back({ry, ry + rowH, k.id, false, true});
-        m_row_rects.back().y0 = rb.top; m_row_rects.back().y1 = rb.bottom;
+        m_row_rects.push_back({rb.left, rb.right, rb.top, rb.bottom, k.id, false, true});
         bx += 32;
 
         // Delete
@@ -185,8 +182,7 @@ void ApiPage::DrawTable(float x, float y, float w, float /*h*/) {
         dc->FillRoundedRectangle(D2D1::RoundedRect(db, 4, 4),
             m_ctx.BrushSolid({0.35f,0.12f,0.12f,1}));
         m_ctx.DrawText(L"✕", db, kRed, 11.0f, true);
-        m_row_rects.push_back({ry, ry + rowH, k.id, true, false});
-        m_row_rects.back().y0 = db.top; m_row_rects.back().y1 = db.bottom;
+        m_row_rects.push_back({db.left, db.right, db.top, db.bottom, k.id, true, false});
 
         ry += rowH + 2;
         dc->DrawLine({x + 20, ry}, {x + w - 20, ry}, m_ctx.BrushSolid(kBorder), 0.5f);
@@ -329,6 +325,7 @@ void ApiPage::OnClick(float cx, float cy) {
 
     // Table row actions
     for (const auto& r : m_row_rects) {
+        if (cx < r.x0 || cx > r.x1) continue;
         if (cy < r.y0 || cy > r.y1) continue;
         if (r.is_delete && m_delete_cb) { m_delete_cb(r.key_id); return; }
         if (r.is_rotate && m_rotate_cb) {

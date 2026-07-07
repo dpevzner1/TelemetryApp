@@ -60,6 +60,7 @@ private:
 
     // Row hit rects
     struct RowRect {
+        float x0, x1;
         float y0, y1;
         std::string key_id;
         bool is_delete;

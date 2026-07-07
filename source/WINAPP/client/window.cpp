@@ -426,9 +426,24 @@ bool AppWindow::InitD2DAndPages() {
             }
         },
         [this](const std::string& id) {
+            std::string deleted_prefix;
+            for (const auto& k : m_key_cache) {
+                if (k.id == id) {
+                    deleted_prefix = k.key_prefix;
+                    break;
+                }
+            }
             auto cli = MakeApiClient(m_config);
             auto res = cli->Delete(("/api/v1/keys/" + id).c_str(), ApiHeaders(m_config));
-            if (res && (res->status == 204 || res->status == 200)) OnApiTick();
+            if (res && (res->status == 204 || res->status == 200)) {
+                if (!deleted_prefix.empty() &&
+                    m_config.api_key.rfind(deleted_prefix, 0) == 0) {
+                    m_config.api_key.clear();
+                    SaveConfig();
+                    DiagnosticLogInfo("Deleted active API key; cleared saved desktop API key.");
+                }
+                OnApiTick();
+            }
         },
         [this](const std::string& id) -> std::string {
             try {
