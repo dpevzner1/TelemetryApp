@@ -1,0 +1,11 @@
+build/
+build_release/
+bin/
+dist/
+*.obj
+*.pdb
+*.ilk
+*.log
+*.user
+*.suo
+.vs/

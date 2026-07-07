@@ -1,0 +1,7 @@
+standalone/TelemetryApp_Portable/logs/*
+standalone/TelemetryApp_Portable/data/*
+standalone/TelemetryApp_Portable/dashboards/*.local.*
+*.log
+*.tmp
+Thumbs.db
+.DS_Store

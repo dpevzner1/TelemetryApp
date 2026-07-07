@@ -1,0 +1,15 @@
+{
+  "name": "telemetry-app",
+  "version": "1.0.0",
+  "description": "Native Windows system telemetry service and GUI client",
+  "dependencies": [
+    {
+      "name": "cpp-httplib",
+      "features": []
+    },
+    "nlohmann-json",
+    "spdlog"
+  ],
+  "builtin-baseline": "1600ce2ba1b6b621bfc5a31a785c4963b817a1c7",
+  "overrides": []
+}
