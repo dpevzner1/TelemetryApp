@@ -219,7 +219,7 @@ Read `API.md` in the install root for the generated endpoint table and active ke
 
 ### Current Limits That Another Tool Must Understand
 
-- Fleet device enrollment is now live for explicit lab use: the host can convert discovered candidates into trusted inventory records by clicking `Enroll`. Remote live telemetry dashboards and remote fleet job dispatch still require credentialed snapshot/SSE dispatch plus TLS/mTLS hardening.
+- Fleet device enrollment is now live for explicit lab use: the host can convert discovered candidates into trusted inventory records by clicking `Enroll`. Lab-enrolled sensors expose lab snapshot and logging-session endpoints so `View`, `Start`, `Pause`, and `Delete` can act on trusted remote sensors. Enterprise TLS/mTLS hardening is still required before describing this as enterprise-grade remote telemetry.
 - Sensor-client installs cannot discover, poll, or manage other devices.
 - A remote sensor will not appear in Fleet search unless its service is running, LAN/API binding is explicitly enabled during install/modify, and the network/firewall allows inbound TCP 8765 to the sensor. Discovery creates candidates only; it does not grant trust.
 - API transport encryption is planned for a later release. Current local builds use HTTP on `localhost` unless remote API binding is explicitly enabled.
@@ -861,7 +861,7 @@ Fleet Management includes a guided **Fleet Logging Jobs** workflow. The wizard w
 - final validation before creation
 - live status in the Fleet page job list with current selected-folder size and available disk space
 
-Current implementation truth model: **Fleet logging starts the local trusted device capture through the existing session logging API. If the job targets all/selected fleet devices, the local portion runs now and the remote sensor portion is explicitly shown as queued until credentialed host-to-sensor telemetry dispatch is active.** Explicit lab enrollment can persist remote devices as trusted inventory, but it does not yet grant remote session-control credentials. Sensor-client installs remain unable to discover, poll, or manage other devices.
+Current implementation truth model: **Fleet logging starts the local trusted device capture through the existing session logging API. If the job targets all/selected trusted fleet devices, the host also starts lab remote logging sessions on enrolled sensors through `/api/v1/lab/sessions`.** Explicit lab enrollment enables lab snapshot and logging control, but it is not enterprise cryptographic trust. Sensor-client installs remain unable to discover, poll, or manage other devices.
 
 Recommended storage model:
 
@@ -1157,7 +1157,7 @@ Remote sensor visibility for local lab testing:
 - Restart `TelemetryService` after changing this setting.
 - Setup applies the Windows Defender Firewall inbound TCP `8765` rule when LAN readiness/API binding and firewall rule management are both enabled. The installer-created inbound rule is program-scoped to `telemetry_service.exe`, profile-scoped to private/domain, and remote-address-scoped to `LocalSubnet`. If the firewall checkbox is off, the sensor is on another routed subnet/VLAN, or enterprise policy blocks local firewall changes, an administrator must allow an equivalent private/domain TCP `8765` rule for `telemetry_service.exe` with the approved remote address scope.
 - On the host device, open `Fleet -> Search LAN`, or open `Fleet -> Manual Add` and enter the sensor sidebar's green `LAN: <ip>:8765` value.
-- A responding sensor appears as an **untrusted candidate**. This confirms network reachability and sensor identity hash only. Click `Enroll` to perform explicit lab enrollment, persist the host inventory record, and transition the device to `Trusted`. Full remote live dashboards still require credentialed snapshot/SSE dispatch.
+- A responding sensor appears as an **untrusted candidate**. This confirms network reachability and sensor identity hash only. Click `Enroll` to perform explicit lab enrollment, persist the host inventory record, and transition the device to `Trusted`. After both host and sensor are updated to the lab-endpoint build, `View` reads `/api/v1/lab/snapshot` and fleet logging starts/stops remote sensor sessions through `/api/v1/lab/sessions`.
 - Duplicate detection uses `mac_hash` first, then `sensor_id_hash`, then address. This avoids duplicate rows when the same laptop is found by Search LAN, Manual Add, or future call-home/passive discovery.
 
 ### Firewall and Network Discovery Troubleshooting
@@ -1217,6 +1217,7 @@ Current enterprise sensor contract:
 - `GET /api/v1/enrollment/readiness` is public and returns only non-secret candidate metadata, including install mode and a sensor ID hash.
 - `GET /api/v1/install/audit` requires API auth and returns the full local sensor/install audit record.
 - `POST /api/v1/enrollment/request` accepts explicit lab enrollment when the request sets `accept_lab_enrollment:true` and the submitted public sensor fingerprint matches the sensor. This records `enrolled_lab` on the sensor. A future enterprise release must add one-time token validation, TLS/mTLS, certificate/thumbprint pinning, and token invalidation before remote telemetry is accepted as cryptographic trust.
+- `GET /api/v1/lab/snapshot`, `POST /api/v1/lab/sessions`, and `POST /api/v1/lab/sessions/{id}/stop` are lab-only endpoints available after explicit lab enrollment. They are intended for trusted local lab networks, not open enterprise networks.
 
 ### No vendor SDKs required
 

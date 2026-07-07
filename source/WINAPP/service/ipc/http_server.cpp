@@ -28,6 +28,9 @@ namespace Service {
 static httplib::Server* s_svr = nullptr;
 static std::string s_service_url = "http://localhost:8765";
 
+static void ErrResp(httplib::Response& res, int status,
+                    const char* error_code, const char* message);
+
 static bool EnvFlagEnabled(const char* name) {
     const char* v = getenv(name);
     if (!v) return false;
@@ -330,6 +333,103 @@ static bool ReadShm(json& out) {
         if (seq1 == seq0) return true; // clean read
     } while (--retries > 0);
     return false;
+}
+
+static bool LabEnrollmentAllowed(httplib::Response& res) {
+    const auto& cfg = GetEnterpriseConfig();
+    if (cfg.enrollment_state == "enrolled_lab") return true;
+    res.status = 403;
+    res.set_content(R"({"error":"lab enrollment required"})", "application/json");
+    DiagnosticLogWarn("Rejected lab remote request before explicit enrollment.");
+    return false;
+}
+
+static bool ParseSessionStartBody(const httplib::Request& req,
+                                  std::string& label,
+                                  std::string& log_dir,
+                                  std::vector<uint32_t>& metric_ids,
+                                  int64_t& duration_ms,
+                                  bool& stop_when_watch_empty,
+                                  std::vector<uint32_t>& watch_pids,
+                                  std::vector<std::string>& watch_exes,
+                                  httplib::Response& res) {
+    duration_ms = 0;
+    stop_when_watch_empty = false;
+    try {
+        json body = json::parse(req.body.empty() ? "{}" : req.body);
+        label   = body.value("label", "");
+        log_dir = body.value("log_dir", "");
+        int64_t duration_sec = body.value("duration_sec", static_cast<int64_t>(0));
+        if (body.contains("stop_policy") && body["stop_policy"].is_object()) {
+            const auto& sp = body["stop_policy"];
+            std::string mode = sp.value("mode", "");
+            if (sp.contains("max_duration_seconds"))
+                duration_sec = sp.value("max_duration_seconds", duration_sec);
+            stop_when_watch_empty =
+                mode == "process_exit" || mode == "process_exit_or_duration";
+        }
+        if (duration_sec > 0) duration_ms = duration_sec * 1000;
+        if (body.contains("metric_ids"))
+            for (auto& v : body["metric_ids"])
+                metric_ids.push_back(v.get<uint32_t>());
+        if (body.contains("watch") && body["watch"].is_object()) {
+            const auto& w = body["watch"];
+            if (w.contains("pids"))
+                for (auto& v : w["pids"])
+                    watch_pids.push_back(v.get<uint32_t>());
+            if (w.contains("exe_names"))
+                for (auto& v : w["exe_names"])
+                    watch_exes.push_back(v.get<std::string>());
+        }
+    } catch (...) {
+        ErrResp(res, 400, "ERR_INVALID_BODY", "Request body must be valid JSON");
+        return false;
+    }
+    if (!log_dir.empty()) {
+        bool is_abs = (log_dir.size() >= 3 &&
+                       isalpha((unsigned char)log_dir[0]) && log_dir[1] == ':')
+                   || (log_dir.size() >= 2 &&
+                       log_dir[0] == '\\' && log_dir[1] == '\\');
+        if (!is_abs) {
+            ErrResp(res, 400, "ERR_INVALID_LOG_DIR",
+                    "log_dir must be an absolute Windows path (e.g. C:\\MyLogs or \\\\server\\share)");
+            return false;
+        }
+    }
+    return true;
+}
+
+static void StartSessionFromParsedRequest(const std::string& label,
+                                          const std::string& log_dir,
+                                          const std::vector<uint32_t>& metric_ids,
+                                          int64_t duration_ms,
+                                          bool stop_when_watch_empty,
+                                          const std::vector<uint32_t>& watch_pids,
+                                          const std::vector<std::string>& watch_exes,
+                                          httplib::Response& res) {
+    for (uint32_t pid : watch_pids) GetWatcher().AddPid(pid);
+    for (const auto& exe : watch_exes) GetWatcher().AddWatch(exe, label.empty() ? exe : label);
+
+    std::string sid = LogSessionStore::Instance().Start(
+        label, metric_ids, log_dir, duration_ms, stop_when_watch_empty);
+    if (sid.empty()) {
+        ErrResp(res, 500, "ERR_SESSION_START_FAILED",
+                "Failed to open log file - check log_dir write access or TELEMETRY_DATA_DIR");
+        return;
+    }
+    LogSessionStore::SessionSummary s;
+    LogSessionStore::Instance().FindSummary(sid, s);
+    json resp;
+    resp["session_id"]    = sid;
+    resp["label"]         = s.label;
+    resp["started_at_ms"] = s.started_at_ms;
+    resp["log_dir"]       = s.log_dir;
+    resp["log_path"]      = s.log_path;
+    resp["duration_ms"]   = s.duration_ms;
+    resp["stop_when_watch_empty"] = s.stop_when_watch_empty;
+    resp["metric_ids"]    = s.metric_ids;
+    res.status = 201;
+    res.set_content(resp.dump(), "application/json");
 }
 
 // Prometheus text format
@@ -783,69 +883,41 @@ bool HttpServerInit() {
         bool stop_when_watch_empty = false;
         std::vector<uint32_t> watch_pids;
         std::vector<std::string> watch_exes;
-        try {
-            json body = json::parse(req.body);
-            label   = body.value("label", "");
-            log_dir = body.value("log_dir", "");
-            int64_t duration_sec = body.value("duration_sec", static_cast<int64_t>(0));
-            if (body.contains("stop_policy") && body["stop_policy"].is_object()) {
-                const auto& sp = body["stop_policy"];
-                std::string mode = sp.value("mode", "");
-                if (sp.contains("max_duration_seconds"))
-                    duration_sec = sp.value("max_duration_seconds", duration_sec);
-                stop_when_watch_empty =
-                    mode == "process_exit" || mode == "process_exit_or_duration";
-            }
-            if (duration_sec > 0) duration_ms = duration_sec * 1000;
-            if (body.contains("metric_ids"))
-                for (auto& v : body["metric_ids"])
-                    metric_ids.push_back(v.get<uint32_t>());
-            if (body.contains("watch") && body["watch"].is_object()) {
-                const auto& w = body["watch"];
-                if (w.contains("pids"))
-                    for (auto& v : w["pids"])
-                        watch_pids.push_back(v.get<uint32_t>());
-                if (w.contains("exe_names"))
-                    for (auto& v : w["exe_names"])
-                        watch_exes.push_back(v.get<std::string>());
-            }
-        } catch (...) {
-            ErrResp(res, 400, "ERR_INVALID_BODY", "Request body must be valid JSON"); return;
-        }
-        // Validate log_dir: if provided, must be an absolute Windows path
-        if (!log_dir.empty()) {
-            bool is_abs = (log_dir.size() >= 3 &&
-                           isalpha((unsigned char)log_dir[0]) && log_dir[1] == ':')
-                       || (log_dir.size() >= 2 &&
-                           log_dir[0] == '\\' && log_dir[1] == '\\');
-            if (!is_abs) {
-                ErrResp(res, 400, "ERR_INVALID_LOG_DIR",
-                        "log_dir must be an absolute Windows path (e.g. C:\\MyLogs or \\\\server\\share)");
-                return;
-            }
-        }
-        for (uint32_t pid : watch_pids) GetWatcher().AddPid(pid);
-        for (const auto& exe : watch_exes) GetWatcher().AddWatch(exe, label.empty() ? exe : label);
+        if (!ParseSessionStartBody(req, label, log_dir, metric_ids, duration_ms,
+                                   stop_when_watch_empty, watch_pids, watch_exes, res)) return;
+        StartSessionFromParsedRequest(label, log_dir, metric_ids, duration_ms,
+                                      stop_when_watch_empty, watch_pids, watch_exes, res);
+    });
 
-        std::string sid = LogSessionStore::Instance().Start(
-            label, metric_ids, log_dir, duration_ms, stop_when_watch_empty);
-        if (sid.empty()) {
-            ErrResp(res, 500, "ERR_SESSION_START_FAILED",
-                    "Failed to open log file — check log_dir write access or TELEMETRY_DATA_DIR"); return;
-        }
-        LogSessionStore::SessionSummary s;
-        LogSessionStore::Instance().FindSummary(sid, s);
-        json resp;
-        resp["session_id"]    = sid;
-        resp["label"]         = s.label;
-        resp["started_at_ms"] = s.started_at_ms;
-        resp["log_dir"]       = s.log_dir;
-        resp["log_path"]      = s.log_path;
-        resp["duration_ms"]   = s.duration_ms;
-        resp["stop_when_watch_empty"] = s.stop_when_watch_empty;
-        resp["metric_ids"]    = s.metric_ids;
-        res.status = 201;
-        res.set_content(resp.dump(), "application/json");
+    // GET /api/v1/lab/snapshot
+    // Lab-only remote snapshot for explicitly enrolled sensors. This is not the
+    // enterprise TLS/mTLS telemetry path.
+    s_svr->Get("/api/v1/lab/snapshot", [](const httplib::Request&, httplib::Response& res) {
+        if (!LabEnrollmentAllowed(res)) return;
+        json snap;
+        if (ReadShm(snap))
+            res.set_content(snap.dump(), "application/json");
+        else
+            ErrResp(res, 503, "ERR_SHM_UNAVAILABLE", "Shared memory snapshot unavailable");
+    });
+
+    // POST /api/v1/lab/sessions
+    // Lab-only remote logging start for explicitly enrolled sensors. The host
+    // should omit log_dir unless it knows the remote machine has that path.
+    s_svr->Post("/api/v1/lab/sessions", [](const httplib::Request& req, httplib::Response& res) {
+        if (!LabEnrollmentAllowed(res)) return;
+        std::string label;
+        std::string log_dir;
+        std::vector<uint32_t> metric_ids;
+        int64_t duration_ms = 0;
+        bool stop_when_watch_empty = false;
+        std::vector<uint32_t> watch_pids;
+        std::vector<std::string> watch_exes;
+        if (!ParseSessionStartBody(req, label, log_dir, metric_ids, duration_ms,
+                                   stop_when_watch_empty, watch_pids, watch_exes, res)) return;
+        StartSessionFromParsedRequest(label, log_dir, metric_ids, duration_ms,
+                                      stop_when_watch_empty, watch_pids, watch_exes, res);
+        if (res.status == 201) DiagnosticLogInfo("Lab remote logging session started by enrolled fleet host.");
     });
 
     // GET /api/v1/sessions  — list all sessions
@@ -907,6 +979,22 @@ bool HttpServerInit() {
             resp["status"]     = "stopped";
             resp["log_path"]   = log_path;
             res.set_content(resp.dump(), "application/json");
+        });
+
+    s_svr->Post(R"(/api/v1/lab/sessions/([a-z0-9-]+)/stop)",
+        [](const httplib::Request& req, httplib::Response& res) {
+            if (!LabEnrollmentAllowed(res)) return;
+            std::string log_path = LogSessionStore::Instance().Stop(req.matches[1]);
+            if (log_path.empty()) {
+                ErrResp(res, 404, "ERR_SESSION_NOT_FOUND",
+                        "Lab session not found or already stopped"); return;
+            }
+            json resp;
+            resp["session_id"] = req.matches[1];
+            resp["status"]     = "stopped";
+            resp["log_path"]   = log_path;
+            res.set_content(resp.dump(), "application/json");
+            DiagnosticLogInfo("Lab remote logging session stopped by enrolled fleet host.");
         });
 
     // DELETE /api/v1/sessions/{id}

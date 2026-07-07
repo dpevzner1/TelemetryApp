@@ -38,6 +38,7 @@ struct FleetLoggingJob {
     int end_hour = 17;
     int target_count = 1;
     int rows_written = 0;
+    std::vector<std::string> remote_session_refs;
     bool local_only = true;
     bool all_day = false;
 };

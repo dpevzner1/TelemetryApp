@@ -378,6 +378,137 @@ static bool PostLabEnrollment(const FleetDeviceRow& row, FleetDeviceRow& enrolle
     return true;
 }
 
+static bool SplitHostPort(const std::string& address, std::string& host, int& port, std::string& error) {
+    std::string hostport = StripUrlHost(address);
+    host = hostport;
+    port = 8765;
+    size_t colon = hostport.rfind(':');
+    if (colon != std::string::npos && colon + 1 < hostport.size()) {
+        host = hostport.substr(0, colon);
+        try { port = std::stoi(hostport.substr(colon + 1)); } catch (...) { port = 8765; }
+    }
+    if (host.empty() || port <= 0 || port > 65535) {
+        error = "Invalid host or port.";
+        return false;
+    }
+    return true;
+}
+
+static bool StartRemoteLabSession(const FleetDeviceRow& row,
+                                  const FleetLoggingJob& job,
+                                  std::string& session_ref,
+                                  std::string& message) {
+    session_ref.clear();
+    message.clear();
+    std::string host;
+    int port = 8765;
+    if (!SplitHostPort(row.address, host, port, message)) return false;
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(2, 0);
+    cli.set_read_timeout(5, 0);
+    cli.set_write_timeout(2, 0);
+
+    json body;
+    body["label"] = job.label + " remote " + row.name;
+    body["metric_ids"] = json::array();
+    // Do not send the host log folder. The remote sensor writes to its own
+    // service data path unless a remote-local absolute folder is configured.
+    body["log_dir"] = "";
+    if (job.schedule_kind == "OneTime" || job.schedule_kind == "Recurring") {
+        body["stop_policy"] = {{"mode", "manual"}};
+    }
+
+    auto res = cli.Post("/api/v1/lab/sessions", body.dump(), "application/json");
+    if (!res) {
+        message = "No response from " + row.address + " while starting remote lab logging.";
+        return false;
+    }
+    json j = json::parse(res->body, nullptr, false);
+    if (res->status < 200 || res->status >= 300 || !j.is_object()) {
+        message = j.is_object() ? j.value("message", j.value("error", "Remote lab logging rejected."))
+                                : ("Remote lab logging returned HTTP " + std::to_string(res->status) + ".");
+        return false;
+    }
+    std::string sid = j.value("session_id", "");
+    if (sid.empty()) {
+        message = "Remote lab logging response did not include a session_id.";
+        return false;
+    }
+    session_ref = row.address + "|" + sid;
+    message = row.name + " -> " + sid + " (" + j.value("log_path", "remote default log path") + ")";
+    return true;
+}
+
+static bool StopRemoteLabSessionRef(const std::string& session_ref, std::string& message) {
+    size_t bar = session_ref.find('|');
+    if (bar == std::string::npos || bar == 0 || bar + 1 >= session_ref.size()) {
+        message = "Invalid remote session reference.";
+        return false;
+    }
+    std::string address = session_ref.substr(0, bar);
+    std::string sid = session_ref.substr(bar + 1);
+    std::string host;
+    int port = 8765;
+    if (!SplitHostPort(address, host, port, message)) return false;
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(2, 0);
+    cli.set_read_timeout(5, 0);
+    cli.set_write_timeout(2, 0);
+    auto res = cli.Post(("/api/v1/lab/sessions/" + sid + "/stop").c_str(), "{}", "application/json");
+    if (!res) {
+        message = "No response while stopping " + sid + " on " + address + ".";
+        return false;
+    }
+    if (res->status < 200 || res->status >= 300) {
+        json j = json::parse(res->body, nullptr, false);
+        message = j.is_object() ? j.value("message", j.value("error", "Remote stop failed."))
+                                : ("Remote stop returned HTTP " + std::to_string(res->status) + ".");
+        return false;
+    }
+    message = "Stopped " + sid + " on " + address + ".";
+    return true;
+}
+
+static bool FetchRemoteLabSnapshotSummary(const FleetDeviceRow& row, std::string& summary, std::string& error) {
+    std::string host;
+    int port = 8765;
+    if (!SplitHostPort(row.address, host, port, error)) return false;
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(2, 0);
+    cli.set_read_timeout(4, 0);
+    cli.set_write_timeout(2, 0);
+    auto res = cli.Get("/api/v1/lab/snapshot");
+    if (!res) {
+        error = "No response from " + row.address + " while reading remote lab snapshot.";
+        return false;
+    }
+    json j = json::parse(res->body, nullptr, false);
+    if (res->status < 200 || res->status >= 300 || !j.is_object()) {
+        error = j.is_object() ? j.value("message", j.value("error", "Remote snapshot rejected."))
+                              : ("Remote snapshot returned HTTP " + std::to_string(res->status) + ".");
+        return false;
+    }
+
+    double cpu = j.value("cpu", json::object()).value("usage_total_pct", 0.0);
+    double ram = j.value("memory", json::object()).value("percent", 0.0);
+    double ram_gb = j.value("memory", json::object()).value("used_gb", 0.0);
+    double gpu = 0.0;
+    double vram = 0.0;
+    if (j.contains("gpus") && j["gpus"].is_array() && !j["gpus"].empty()) {
+        gpu = j["gpus"][0].value("usage_pct", 0.0);
+        vram = j["gpus"][0].value("vram_pct", 0.0);
+    }
+    char buf[384]{};
+    snprintf(buf, sizeof(buf),
+             "%s live telemetry: CPU %.1f%% | RAM %.1f%% (%.2f GB) | GPU %.1f%% | VRAM %.1f%%",
+             row.name.c_str(), cpu, ram, ram_gb, gpu, vram);
+    summary = buf;
+    return true;
+}
+
 static std::vector<std::string> LocalIpv4Prefixes() {
     std::vector<std::string> prefixes;
     WSADATA wsa{};
@@ -991,20 +1122,60 @@ void FleetPage::CreateDraftJob() {
 void FleetPage::StartJob(size_t index) {
     if (index >= m_jobs.size()) return;
     auto& job = m_jobs[index];
-    if (!m_on_start_local_job) return;
-    std::string error;
-    if (m_on_start_local_job(job, error)) {
+    bool local_started = false;
+    bool remote_attempted = false;
+    int remote_started = 0;
+    std::vector<std::string> notes;
+    job.remote_session_refs.clear();
+
+    if (m_on_start_local_job) {
+        std::string error;
+        local_started = m_on_start_local_job(job, error);
+        if (!local_started) {
+            notes.push_back(error.empty() ? "Local logging session failed to start." : error);
+        }
+    }
+
+    if (!job.local_only) {
+        for (const auto& device : m_devices) {
+            if (device.local || !device.trusted) continue;
+            remote_attempted = true;
+            std::string ref;
+            std::string msg;
+            if (StartRemoteLabSession(device, job, ref, msg)) {
+                ++remote_started;
+                job.remote_session_refs.push_back(ref);
+                notes.push_back(msg);
+            } else {
+                notes.push_back(device.name + ": " + msg);
+            }
+        }
+        if (!remote_attempted) {
+            notes.push_back("No trusted remote sensors were available for remote lab logging.");
+        }
+    }
+
+    if (local_started || remote_started > 0) {
         if (!m_running_job_id.empty()) {
             for (auto& j : m_jobs) if (j.id == m_running_job_id) j.status = "Stopped";
         }
         job.status = "Running";
-        job.last_error = job.local_only
-            ? ""
-            : "Local capture is running. Remote sensor capture is queued until credentialed host-to-sensor dispatch is enabled.";
+        if (job.local_only) {
+            job.last_error.clear();
+        } else {
+            std::ostringstream status;
+            status << (local_started ? "Local capture running" : "Local capture not running")
+                   << "; remote lab sessions started: " << remote_started << ".";
+            if (!notes.empty()) status << " " << notes.front();
+            job.last_error = status.str();
+        }
         m_running_job_id = job.id;
     } else {
         job.status = "Failed";
-        job.last_error = error.empty() ? "Could not start local logging session." : error;
+        std::ostringstream fail;
+        fail << "No logging session started.";
+        if (!notes.empty()) fail << " " << notes.front();
+        job.last_error = fail.str();
     }
     SaveJobs();
 }
@@ -1012,7 +1183,15 @@ void FleetPage::StartJob(size_t index) {
 void FleetPage::StopJob(size_t index) {
     if (index >= m_jobs.size()) return;
     if (m_on_stop_local_job) m_on_stop_local_job();
+    std::vector<std::string> notes;
+    for (const auto& ref : m_jobs[index].remote_session_refs) {
+        std::string msg;
+        StopRemoteLabSessionRef(ref, msg);
+        if (!msg.empty()) notes.push_back(msg);
+    }
+    m_jobs[index].remote_session_refs.clear();
     m_jobs[index].status = "Paused";
+    if (!notes.empty()) m_jobs[index].last_error = notes.front();
     if (m_running_job_id == m_jobs[index].id) m_running_job_id.clear();
     SaveJobs();
 }
@@ -1020,6 +1199,10 @@ void FleetPage::StopJob(size_t index) {
 void FleetPage::DeleteJob(size_t index) {
     if (index >= m_jobs.size()) return;
     if (m_running_job_id == m_jobs[index].id && m_on_stop_local_job) m_on_stop_local_job();
+    for (const auto& ref : m_jobs[index].remote_session_refs) {
+        std::string ignored;
+        StopRemoteLabSessionRef(ref, ignored);
+    }
     if (m_running_job_id == m_jobs[index].id) m_running_job_id.clear();
     m_jobs.erase(m_jobs.begin() + static_cast<std::ptrdiff_t>(index));
     SaveJobs();
@@ -1036,8 +1219,23 @@ void FleetPage::ViewDevice(size_t index) {
         m_discovery_status = "Enroll " + row.address + " before opening remote telemetry. Candidate discovery proves reachability only.";
         return;
     }
-    m_discovery_status = "Trusted device " + row.address +
-        " is enrolled. Remote live dashboard requires credentialed snapshot/SSE dispatch, which remains the next hardening step.";
+    std::string summary;
+    std::string error;
+    if (FetchRemoteLabSnapshotSummary(row, summary, error)) {
+        m_discovery_status = summary + ". Lab snapshot succeeded; full remote dashboard drill-in remains the next UI step.";
+        if (index < m_devices.size()) {
+            m_devices[index].state = "Online";
+            m_devices[index].last_error.clear();
+            SaveDevices();
+        }
+    } else {
+        m_discovery_status = "Remote view failed for " + row.address + ": " + error;
+        if (index < m_devices.size()) {
+            m_devices[index].state = "Offline";
+            m_devices[index].last_error = error;
+            SaveDevices();
+        }
+    }
 }
 
 void FleetPage::EnrollDevice(size_t index) {
@@ -1241,6 +1439,12 @@ void FleetPage::LoadJobs() {
             job.rows_written = j.value("rows_written", 0);
             job.local_only = j.value("local_only", true);
             job.all_day = j.value("all_day", false);
+            job.remote_session_refs.clear();
+            if (j.contains("remote_session_refs") && j["remote_session_refs"].is_array()) {
+                for (const auto& ref : j["remote_session_refs"]) {
+                    if (ref.is_string()) job.remote_session_refs.push_back(ref.get<std::string>());
+                }
+            }
             job.schedule = BuildScheduleLabel(job);
             if (!job.id.empty()) m_jobs.push_back(job);
         }
@@ -1265,7 +1469,8 @@ void FleetPage::SaveJobs() const {
             {"partition", job.partition}, {"format", job.format}, {"verbosity", job.verbosity},
             {"status", job.status}, {"last_error", job.last_error},
             {"target_count", job.target_count}, {"rows_written", job.rows_written},
-            {"local_only", job.local_only}, {"all_day", job.all_day}
+            {"local_only", job.local_only}, {"all_day", job.all_day},
+            {"remote_session_refs", job.remote_session_refs}
         });
     }
     std::ofstream f(m_jobs_path);

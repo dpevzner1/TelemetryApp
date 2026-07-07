@@ -61,6 +61,9 @@ Current remote fleet truth: local sessions are live; discovered sensors can be c
 | GET | `/api/v1/diagnostics` | Required | Service diagnostics and runtime counters |
 | GET | `/api/v1/enrollment/readiness` | None | Non-secret sensor readiness metadata for manual add/candidate discovery |
 | POST | `/api/v1/enrollment/request` | None | Explicit lab enrollment request; validates public sensor fingerprint and records sensor acknowledgement |
+| GET | `/api/v1/lab/snapshot` | None after enrollment | Lab-enrolled remote snapshot for Fleet View |
+| POST | `/api/v1/lab/sessions` | None after enrollment | Lab-enrolled remote logging session start |
+| POST | `/api/v1/lab/sessions/<id>/stop` | None after enrollment | Lab-enrolled remote logging session stop |
 | GET | `/api/v1/install/audit` | Required | Local install mode, sensor identity, registry/config audit metadata |
 | GET | `/api/v1/keys` | Required | List all API keys (prefixes only) |
 | POST | `/api/v1/keys` | Required | Create a new API key |
@@ -110,6 +113,14 @@ Current implementation exposes source-qualified GPU power where available, CPU p
 `GET /api/v1/enrollment/readiness` is intentionally public and returns only non-secret candidate metadata: product, hostname, install mode, sensor ID hash, MAC hash, host URL configured state, and remote TLS requirement. Discovery is not trust. Raw MAC addresses are reserved for trusted/enrolled inventory APIs because they are stable hardware identifiers.
 
 `POST /api/v1/enrollment/request` accepts explicit lab enrollment when the request sets `accept_lab_enrollment:true` and the submitted `sensor_id_hash` matches the sensor readiness fingerprint. If a `mac_hash` is supplied, it must also match. Accepted enrollment records `enrolled_lab` on the sensor and returns the same public identity metadata with `accepted:true`. This is operator-driven lab trust for local fleet testing, not enterprise cryptographic trust. A future release must add one-time token validation, TLS/mTLS, certificate/thumbprint pinning, and token invalidation before accepting remote telemetry as enterprise-grade.
+
+After explicit lab enrollment, Fleet Host uses:
+
+- `GET /api/v1/lab/snapshot` for trusted-device View telemetry.
+- `POST /api/v1/lab/sessions` to start a remote sensor log in the sensor service's default data path.
+- `POST /api/v1/lab/sessions/<id>/stop` to pause/stop remote sensor logging.
+
+These lab endpoints are intentionally for trusted local lab networks. They are not a replacement for the planned enterprise TLS/mTLS, certificate-pinned, credentialed telemetry channel.
 
 `GET /api/v1/install/audit` requires API auth and returns local install mode, full sensor ID, data path, and the secrets policy. Enrollment tokens and API secrets must not be persisted in registry, environment variables, or diagnostic logs.
 
