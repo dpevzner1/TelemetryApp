@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <functional>
 #include <unordered_map>
 
 namespace Client {
@@ -28,6 +29,9 @@ public:
 
     void SetProfile(DashboardProfile* profile);
     DashboardProfile* Profile() const { return m_profile; }
+    void SetSourceLabel(const std::string& label) { m_source_label = label; }
+    void ClearMetricValues();
+    void SetOnSourceMenuRequested(std::function<void()> cb) { m_on_source_menu_requested = std::move(cb); }
 
     // Called each data tick (~1Hz): push fresh values into ring buffers
     void PushMetricValue(uint32_t metric_id, float value);
@@ -53,6 +57,8 @@ public:
 private:
     D2DContext&       m_ctx;
     DashboardProfile* m_profile = nullptr;
+    std::string        m_source_label = "This Device";
+    std::function<void()> m_on_source_menu_requested;
 
     // Per-metric ring of 300 values (mirrors service-side MetricRing)
     struct LocalRing {
@@ -96,6 +102,7 @@ private:
 
     // Per-frame layout
     float m_page_x = 0, m_page_y = 0, m_page_w = 0;
+    float m_source_x = 0, m_source_y = 0, m_source_w = 0, m_source_h = 0;
     float m_show_all_x = 0, m_show_all_y = 0, m_show_all_w = 84, m_show_all_h = 22;
     float m_edit_x = 0, m_edit_y = 0, m_edit_w = 390, m_edit_h = 0;
     float m_edit_scroll_y = 0;

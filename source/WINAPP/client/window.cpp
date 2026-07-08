@@ -13,6 +13,7 @@
 #include <memory>
 #include <utility>
 #include <exception>
+#include <algorithm>
 #include <unordered_set>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
@@ -160,6 +161,30 @@ static ApiKeyInfo ApiKeyFromJson(const json& j) {
 
 static std::wstring Widen(const std::string& s) {
     return std::wstring(s.begin(), s.end());
+}
+
+static std::string FleetSourceId(const FleetDeviceRow& row) {
+    if (!row.mac_hash.empty()) return "mac:" + row.mac_hash;
+    if (!row.sensor_hash.empty()) return "sensor:" + row.sensor_hash;
+    return "addr:" + row.address;
+}
+
+static bool SplitHostPortLocal(const std::string& address, std::string& host, int& port) {
+    std::string s = address;
+    if (s.rfind("http://", 0) == 0) s = s.substr(7);
+    if (s.rfind("https://", 0) == 0) s = s.substr(8);
+    size_t slash = s.find('/');
+    if (slash != std::string::npos) s = s.substr(0, slash);
+    size_t colon = s.rfind(':');
+    if (colon == std::string::npos) {
+        host = s;
+        port = 8765;
+        return !host.empty();
+    }
+    host = s.substr(0, colon);
+    port = atoi(s.substr(colon + 1).c_str());
+    if (port <= 0) port = 8765;
+    return !host.empty();
 }
 
 static std::string Narrow(const std::wstring& s) {
@@ -328,9 +353,23 @@ bool AppWindow::InitD2DAndPages() {
         if (p == NavPage::Api) OnApiTick();
     });
     m_fleet_page->SetOnViewLocal([this]() {
+        SelectTelemetrySourceLocal();
         m_current_page = NavPage::Dashboard;
         if (m_sidebar) m_sidebar->SetPage(NavPage::Dashboard);
-        InvalidateRect(m_hwnd, nullptr, FALSE);
+    });
+    m_fleet_page->SetOnViewRemote([this](const FleetDeviceRow& row) {
+        std::string id = FleetSourceId(row);
+        auto sources = BuildTelemetrySources();
+        for (size_t i = 0; i < sources.size(); ++i) {
+            if (sources[i].id == id) {
+                SelectTelemetrySourceByIndex(i);
+                return;
+            }
+        }
+        MessageBoxW(m_hwnd,
+            L"That device is not currently available as a trusted dashboard source. Refresh or enroll it first.",
+            L"Fleet dashboard source unavailable",
+            MB_ICONINFORMATION | MB_OK);
     });
     m_fleet_page->SetStoragePath(m_config.data_dir + "\\fleet_logging_jobs.json");
     m_fleet_page->SetOnChooseLogFolder([this](std::string& out_dir) -> bool {
@@ -360,6 +399,13 @@ bool AppWindow::InitD2DAndPages() {
         m_config.logging_enabled = false;
         SaveConfig();
     });
+    m_fleet_page->SetOnDevicesChanged([this]() {
+        ValidateSelectedTelemetrySource();
+        int selected = -1;
+        auto options = BuildTrayDeviceOptions(selected);
+        m_overlay.SetFleetDeviceOptions(options, selected);
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+    });
 
     std::string profile_path = m_config.dashboards_dir + "\\Default.json";
     if (!m_profile.Load(profile_path)) {
@@ -368,6 +414,8 @@ bool AppWindow::InitD2DAndPages() {
     }
     LoadMetricCatalog();
     m_dashboard_page->SetProfile(&m_profile);
+    m_dashboard_page->SetSourceLabel(m_selected_source_label);
+    m_dashboard_page->SetOnSourceMenuRequested([this]() { ShowDashboardSourceMenu(); });
     SyncPagesFromMetricCatalog();
     m_metrics_page->SetLogDir(m_config.log_dir);
     m_metrics_page->SetLogFormat(m_config.log_format);
@@ -641,6 +689,12 @@ void AppWindow::OnRender() {
     m_sidebar->service_connected = m_shm_open;
     m_sidebar->active_key_count  = (int)m_key_cache.size();
     m_sidebar->service_address   = m_last_service_connected ? m_service_display_address : "LAN: unavailable";
+    ValidateSelectedTelemetrySource();
+    {
+        int selected_remote = -1;
+        auto options = BuildTrayDeviceOptions(selected_remote);
+        m_overlay.SetFleetDeviceOptions(options, selected_remote);
+    }
     m_sidebar->Draw(h, m_dpi_scale);
 
     switch (m_current_page) {
@@ -700,12 +754,20 @@ void AppWindow::OnDataTick() {
         return ok;
     };
 
+    bool remote_source = IsFleetHostInstall() && m_selected_source_id != "local";
+    if (remote_source) FetchSelectedRemoteSnapshot();
+
     // Feed HUD overlay
     if (m_overlay.IsVisible()) {
         for (const auto& hm : m_overlay.Metrics()) {
-            double v = 0;
-            read_metric(hm.metric_id, v);
-            m_overlay.UpdateValue(hm.metric_id, (float)v);
+            if (remote_source) {
+                float v = 0.0f;
+                if (ReadRemoteSnapshotMetric(hm.metric_id, v)) m_overlay.UpdateValue(hm.metric_id, v);
+            } else {
+                double v = 0;
+                read_metric(hm.metric_id, v);
+                m_overlay.UpdateValue(hm.metric_id, (float)v);
+            }
         }
     }
 
@@ -749,6 +811,10 @@ void AppWindow::OnDataTick() {
     if (!prof) return;
 
     auto readf = [&](uint32_t id) -> float {
+        if (remote_source) {
+            float rv = 0.0f;
+            return ReadRemoteSnapshotMetric(id, rv) ? rv : 0.0f;
+        }
         double v = 0.0;
         read_metric(id, v);
         return (float)v;
@@ -871,6 +937,256 @@ bool AppWindow::IsFleetHostInstall() const {
     return _stricmp(m_config.install_mode.c_str(), "FleetHost") == 0;
 }
 
+std::vector<AppWindow::TelemetrySource> AppWindow::BuildTelemetrySources() const {
+    std::vector<TelemetrySource> out;
+    if (!IsFleetHostInstall() || !m_fleet_page) return out;
+    for (const auto& row : m_fleet_page->Devices()) {
+        if (row.local || !row.trusted) continue;
+        TelemetrySource src;
+        src.id = FleetSourceId(row);
+        src.label = row.name.empty() ? row.address : row.name;
+        src.address = row.address;
+        src.local = false;
+        src.online = row.state == "Online";
+        out.push_back(src);
+    }
+    return out;
+}
+
+std::vector<TrayDeviceOption> AppWindow::BuildTrayDeviceOptions(int& selected_remote_index) const {
+    selected_remote_index = -1;
+    std::vector<TrayDeviceOption> options;
+    auto sources = BuildTelemetrySources();
+    for (size_t i = 0; i < sources.size() && i < 200; ++i) {
+        TrayDeviceOption opt;
+        std::string label = sources[i].label + " (" + sources[i].address + ")";
+        opt.label = Widen(label);
+        opt.online = sources[i].online;
+        opt.selected = sources[i].id == m_selected_source_id;
+        if (opt.selected) selected_remote_index = (int)i;
+        options.push_back(std::move(opt));
+    }
+    return options;
+}
+
+void AppWindow::SelectTelemetrySourceLocal() {
+    m_selected_source_id = "local";
+    m_selected_source_label = "This Device";
+    m_remote_snapshot_values.clear();
+    if (m_dashboard_page) {
+        m_dashboard_page->SetSourceLabel(m_selected_source_label);
+        m_dashboard_page->ClearMetricValues();
+    }
+    DiagnosticLogInfo("Dashboard telemetry source selected: This Device.");
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+void AppWindow::SelectTelemetrySourceByIndex(size_t index) {
+    auto sources = BuildTelemetrySources();
+    if (index >= sources.size()) {
+        SelectTelemetrySourceLocal();
+        return;
+    }
+    const auto& src = sources[index];
+    if (!src.online) {
+        MessageBoxW(m_hwnd,
+            L"That fleet device is currently offline. Refresh or re-enroll it before using it as a live dashboard source.",
+            L"Fleet device offline",
+            MB_ICONINFORMATION | MB_OK);
+        return;
+    }
+    m_selected_source_id = src.id;
+    m_selected_source_label = src.label;
+    m_remote_snapshot_values.clear();
+    if (m_dashboard_page) {
+        m_dashboard_page->SetSourceLabel("Fleet Device: " + src.label);
+        m_dashboard_page->ClearMetricValues();
+    }
+    m_current_page = NavPage::Dashboard;
+    if (m_sidebar) m_sidebar->SetPage(NavPage::Dashboard);
+    ShowWindow(m_hwnd, SW_RESTORE);
+    SetForegroundWindow(m_hwnd);
+    DiagnosticLogInfo("Dashboard telemetry source selected: " + src.label + " at " + src.address + ".");
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+void AppWindow::ValidateSelectedTelemetrySource() {
+    if (m_selected_source_id == "local") return;
+    auto sources = BuildTelemetrySources();
+    for (const auto& src : sources) {
+        if (src.id == m_selected_source_id) return;
+    }
+    DiagnosticLogWarn("Selected fleet telemetry source was removed or is no longer trusted; returning to local dashboard.");
+    SelectTelemetrySourceLocal();
+}
+
+static void SnapshotPut(std::unordered_map<uint32_t, float>& values, uint32_t id, const json& obj, const char* key) {
+    if (obj.is_object() && obj.contains(key) && obj[key].is_number()) {
+        values[id] = obj[key].get<float>();
+    }
+}
+
+bool AppWindow::FetchSelectedRemoteSnapshot() {
+    if (m_selected_source_id == "local") return false;
+    auto sources = BuildTelemetrySources();
+    auto it = std::find_if(sources.begin(), sources.end(), [&](const TelemetrySource& s) {
+        return s.id == m_selected_source_id;
+    });
+    if (it == sources.end()) {
+        SelectTelemetrySourceLocal();
+        return false;
+    }
+
+    std::string host;
+    int port = 8765;
+    if (!SplitHostPortLocal(it->address, host, port)) return false;
+    try {
+        httplib::Client cli(host, port);
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(2, 0);
+        auto res = cli.Get("/api/v1/lab/snapshot");
+        if (!res || res->status != 200) {
+            DiagnosticLogWarn("Remote dashboard snapshot failed for " + it->address +
+                              ": status=" + std::to_string(res ? res->status : 0) + ".");
+            return false;
+        }
+        json j = json::parse(res->body, nullptr, false);
+        if (!j.is_object()) return false;
+
+        std::unordered_map<uint32_t, float> values;
+        const json cpu = j.value("cpu", json::object());
+        SnapshotPut(values, MetricId::CPU_USAGE_TOTAL, cpu, "usage_total_pct");
+        SnapshotPut(values, MetricId::CPU_FREQ_ACTUAL_MHZ, cpu, "freq_actual_mhz");
+        if (cpu.contains("per_core_pct") && cpu["per_core_pct"].is_array()) {
+            for (size_t i = 0; i < cpu["per_core_pct"].size() && i < 32; ++i) {
+                if (cpu["per_core_pct"][i].is_number()) values[cpu_core_metric((uint32_t)i)] = cpu["per_core_pct"][i].get<float>();
+            }
+        }
+
+        const json mem = j.value("memory", json::object());
+        SnapshotPut(values, MetricId::MEM_TOTAL_GB, mem, "total_gb");
+        SnapshotPut(values, MetricId::MEM_USED_GB, mem, "used_gb");
+        SnapshotPut(values, MetricId::MEM_AVAILABLE_GB, mem, "available_gb");
+        SnapshotPut(values, MetricId::MEM_PERCENT, mem, "percent");
+        SnapshotPut(values, MetricId::MEM_SWAP_USED_GB, mem, "swap_used_gb");
+        SnapshotPut(values, MetricId::MEM_SWAP_PERCENT, mem, "swap_pct");
+        SnapshotPut(values, MetricId::MEM_STANDBY_GB, mem, "standby_gb");
+        SnapshotPut(values, MetricId::MEM_PAGE_FAULT_RATE, mem, "page_fault_rate");
+
+        if (j.contains("gpus") && j["gpus"].is_array()) {
+            for (size_t gi = 0; gi < j["gpus"].size() && gi < MetricId::GPU_MAX_COUNT; ++gi) {
+                const json& g = j["gpus"][gi];
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::USAGE_PCT), g, "usage_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::VRAM_USED_MB), g, "vram_used_mb");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::VRAM_TOTAL_MB), g, "vram_total_mb");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::VRAM_PCT), g, "vram_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::TEMP_C), g, "temp_c");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::POWER_W), g, "power_w");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::FAN_PCT), g, "fan_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::CLOCK_CORE_MHZ), g, "clock_core_mhz");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::CLOCK_MEM_MHZ), g, "clock_mem_mhz");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::PDH_UTIL_PCT), g, "pdh_util_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::ENCODER_PCT), g, "encoder_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::DECODER_PCT), g, "decoder_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::SM_UTIL_PCT), g, "sm_util_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::MEM_BW_UTIL_PCT), g, "mem_bw_util_pct");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::CUDA_CC_MAJOR), g, "cuda_cc_major");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::CUDA_CC_MINOR), g, "cuda_cc_minor");
+                SnapshotPut(values, gpu_metric((uint32_t)gi, GpuOff::TENSOR_CORE_GEN), g, "tensor_core_gen");
+                if (g.contains("has_tensor_cores")) {
+                    values[gpu_metric((uint32_t)gi, GpuOff::TENSOR_ACTIVE)] = g.value("has_tensor_cores", false) ? 1.0f : 0.0f;
+                }
+            }
+        }
+
+        if (j.contains("disk") && j["disk"].is_array()) {
+            for (size_t di = 0; di < j["disk"].size() && di < MetricId::DISK_MAX_COUNT; ++di) {
+                const json& d = j["disk"][di];
+                SnapshotPut(values, disk_metric((uint32_t)di, DiskOff::READ_BYTES_S), d, "read_bytes_s");
+                SnapshotPut(values, disk_metric((uint32_t)di, DiskOff::WRITE_BYTES_S), d, "write_bytes_s");
+                SnapshotPut(values, disk_metric((uint32_t)di, DiskOff::READ_IOPS), d, "read_iops");
+                SnapshotPut(values, disk_metric((uint32_t)di, DiskOff::WRITE_IOPS), d, "write_iops");
+                SnapshotPut(values, disk_metric((uint32_t)di, DiskOff::BUSY_PCT), d, "busy_pct");
+            }
+        }
+
+        if (j.contains("network") && j["network"].is_array()) {
+            for (size_t ni = 0; ni < j["network"].size() && ni < MetricId::NET_MAX_COUNT; ++ni) {
+                const json& n = j["network"][ni];
+                SnapshotPut(values, net_metric((uint32_t)ni, NetOff::RECV_BYTES_S), n, "recv_bytes_s");
+                SnapshotPut(values, net_metric((uint32_t)ni, NetOff::SENT_BYTES_S), n, "sent_bytes_s");
+                SnapshotPut(values, net_metric((uint32_t)ni, NetOff::RECV_PKTS_S), n, "recv_pkts_s");
+                SnapshotPut(values, net_metric((uint32_t)ni, NetOff::SENT_PKTS_S), n, "sent_pkts_s");
+            }
+        }
+
+        const json self = j.value("self", json::object());
+        SnapshotPut(values, MetricId::SELF_CPU_PCT, self, "cpu_pct");
+
+        if (j.contains("watched") && j["watched"].is_array()) {
+            for (size_t wi = 0; wi < j["watched"].size() && wi < MetricId::WATCH_MAX_COUNT; ++wi) {
+                const json& w = j["watched"][wi];
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::CPU_PCT), w, "cpu_pct");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::PRIVATE_MB), w, "mem_private_mb");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::GPU_SM_PCT), w, "gpu_sm_pct");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::GPU_VRAM_MB), w, "gpu_vram_mb");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::DISK_READ_BYTES_S), w, "disk_read_bytes_s");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::DISK_WRITE_BYTES_S), w, "disk_write_bytes_s");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::PAGE_FAULTS_S), w, "page_faults_s");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::UPTIME_S), w, "uptime_sec");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::THREADS), w, "threads");
+                SnapshotPut(values, watch_metric((uint32_t)wi, WatchOff::HANDLES), w, "handles");
+            }
+        }
+
+        m_remote_snapshot_values = std::move(values);
+        return true;
+    } catch (const std::exception& ex) {
+        DiagnosticLogWarn(std::string("Remote dashboard snapshot exception: ") + ex.what());
+        return false;
+    } catch (...) {
+        DiagnosticLogWarn("Remote dashboard snapshot exception: unknown.");
+        return false;
+    }
+}
+
+bool AppWindow::ReadRemoteSnapshotMetric(uint32_t id, float& out) const {
+    auto it = m_remote_snapshot_values.find(id);
+    if (it == m_remote_snapshot_values.end()) return false;
+    out = it->second;
+    return true;
+}
+
+void AppWindow::ShowDashboardSourceMenu() {
+    HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING | (m_selected_source_id == "local" ? MF_CHECKED : 0),
+                TRAY_CMD_DASHBOARD_THIS_DEVICE, L"This Device");
+
+    if (IsFleetHostInstall()) {
+        auto sources = BuildTelemetrySources();
+        if (!sources.empty()) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        for (size_t i = 0; i < sources.size() && i < 200; ++i) {
+            std::string label = sources[i].label + " (" + sources[i].address + ")";
+            UINT flags = sources[i].online ? MF_STRING : MF_GRAYED;
+            if (sources[i].id == m_selected_source_id) flags |= MF_CHECKED;
+            AppendMenuW(menu, flags, TRAY_CMD_DASHBOARD_DEVICE_BASE + (UINT)i,
+                        Widen(label).c_str());
+        }
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, TRAY_CMD_MANAGE_FLEET, L"Manage Fleet...");
+    }
+
+    POINT pt{};
+    GetCursorPos(&pt);
+    SetForegroundWindow(m_hwnd);
+    UINT cmd = (UINT)TrackPopupMenu(menu,
+        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_TOPALIGN,
+        pt.x, pt.y, 0, m_hwnd, nullptr);
+    PostMessageW(m_hwnd, WM_NULL, 0, 0);
+    DestroyMenu(menu);
+    if (cmd) HandleMenuCommand(cmd);
+}
+
 std::string AppWindow::ProductDisplayName() const {
     if (_stricmp(m_config.install_mode.c_str(), "FleetHost") == 0) return "TelemetryApp Fleet Manager";
     if (_stricmp(m_config.install_mode.c_str(), "SensorClient") == 0) return "TelemetryApp Sensor";
@@ -943,6 +1259,13 @@ void AppWindow::ToggleMetricLoggingFromMenu() {
 }
 
 void AppWindow::HandleMenuCommand(UINT cmd) {
+    if (cmd >= TRAY_CMD_DASHBOARD_DEVICE_BASE && cmd <= TRAY_CMD_DASHBOARD_DEVICE_MAX) {
+        if (IsFleetHostInstall()) {
+            SelectTelemetrySourceByIndex((size_t)(cmd - TRAY_CMD_DASHBOARD_DEVICE_BASE));
+        }
+        return;
+    }
+
     switch (cmd) {
     case TRAY_CMD_RESTORE:
         DoRestoreFromTray();
@@ -965,6 +1288,21 @@ void AppWindow::HandleMenuCommand(UINT cmd) {
         break;
     case TRAY_CMD_HUD_RIGHT:
         SetHudPositionFromMenu(HudPosition::Right);
+        break;
+    case TRAY_CMD_DASHBOARD_THIS_DEVICE:
+        SelectTelemetrySourceLocal();
+        m_current_page = NavPage::Dashboard;
+        if (m_sidebar) m_sidebar->SetPage(NavPage::Dashboard);
+        break;
+    case TRAY_CMD_MANAGE_FLEET:
+        if (IsFleetHostInstall()) {
+            m_current_page = NavPage::Fleet;
+            if (m_sidebar) m_sidebar->SetPage(NavPage::Fleet);
+            ShowWindow(m_hwnd, SW_RESTORE);
+            SetForegroundWindow(m_hwnd);
+            m_overlay.Hide();
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+        }
         break;
     case TRAY_CMD_FLEET_METRICS:
         if (IsFleetMetricSelectionReady()) {
@@ -1214,10 +1552,14 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TRAY:
         if (self) {
             bool logging_enabled = self->m_metrics_page && self->m_metrics_page->LoggingEnabled();
+            int selected_remote = -1;
+            auto options = self->BuildTrayDeviceOptions(selected_remote);
             SystemTray::HandleMessage(hwnd, lp, logging_enabled,
                 static_cast<int>(self->m_config.hud_position),
                 self->IsFleetHostInstall(),
                 self->IsFleetMetricSelectionReady(),
+                options,
+                selected_remote,
                 [self](UINT cmd) { self->HandleMenuCommand(cmd); });
         }
         return 0;

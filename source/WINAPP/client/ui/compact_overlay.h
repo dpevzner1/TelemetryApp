@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include "system_tray.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -50,6 +51,10 @@ public:
     void SetPosition(HudPosition pos);
     HudPosition Position() const { return m_position; }
     void SetFleetMenuVisible(bool visible) { m_fleet_menu_visible = visible; }
+    void SetFleetDeviceOptions(std::vector<TrayDeviceOption> devices, int selected_source_index) {
+        m_fleet_devices = std::move(devices);
+        m_selected_source_index = selected_source_index;
+    }
 
     // Push a live value for a metric (call from data tick)
     void UpdateValue(uint32_t metric_id, float value);
@@ -82,6 +87,8 @@ private:
     RECT m_bar_rect{};  // screen coordinates of the bar window
     bool m_appbar_registered = false;
     bool m_fleet_menu_visible = false;
+    std::vector<TrayDeviceOption> m_fleet_devices;
+    int  m_selected_source_index = -1;
     int  m_hover_index = -1;
     int  m_hover_x = 0;
     int  m_hover_y = 0;

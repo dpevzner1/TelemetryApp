@@ -31,7 +31,9 @@ std::wstring Utf8ToWide(const std::string& s) {
     return out;
 }
 
-HMENU BuildHudContextMenu(HudPosition position, bool fleet_visible) {
+HMENU BuildHudContextMenu(HudPosition position, bool fleet_visible,
+                          const std::vector<TrayDeviceOption>& fleet_devices,
+                          int selected_source_index) {
     int pos = static_cast<int>(position);
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, TRAY_CMD_RESTORE, L"Restore");
@@ -49,7 +51,17 @@ HMENU BuildHudContextMenu(HudPosition position, bool fleet_visible) {
     AppendMenuW(menu, MF_POPUP, (UINT_PTR)hud_menu, L"HUD Orientation");
 
     if (fleet_visible) {
-        AppendMenuW(menu, MF_STRING, TRAY_CMD_FLEET_METRICS, L"Fleet Device Metrics...");
+        HMENU view_menu = CreatePopupMenu();
+        AppendMenuW(view_menu, MF_STRING | (selected_source_index < 0 ? MF_CHECKED : 0),
+                    TRAY_CMD_DASHBOARD_THIS_DEVICE, L"This Device");
+        for (size_t i = 0; i < fleet_devices.size() && i < 200; ++i) {
+            UINT flags = fleet_devices[i].online ? MF_STRING : MF_GRAYED;
+            if ((int)i == selected_source_index) flags |= MF_CHECKED;
+            AppendMenuW(view_menu, flags, TRAY_CMD_DASHBOARD_DEVICE_BASE + (UINT)i,
+                        fleet_devices[i].label.c_str());
+        }
+        AppendMenuW(menu, MF_POPUP, (UINT_PTR)view_menu, L"Dashboard View");
+        AppendMenuW(menu, MF_STRING, TRAY_CMD_MANAGE_FLEET, L"Manage Fleet...");
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, TRAY_CMD_EXIT, L"Exit");
@@ -303,13 +315,6 @@ void CompactOverlay::UpdateValue(uint32_t metric_id, float value) {
 void CompactOverlay::Render() {
     if (!m_rt || !IsVisible()) return;
 
-    // Refresh values from SHM directly
-    for (size_t i = 0; i < m_metrics.size() && i < m_values.size(); ++i) {
-        double v = 0;
-        ShmReadMetric(m_metrics[i].metric_id, v);
-        m_values[i] = (float)v;
-    }
-
     m_rt->BeginDraw();
     m_rt->Clear({0.09f, 0.09f, 0.11f, 1.0f});
 
@@ -545,7 +550,9 @@ LRESULT CALLBACK CompactOverlay::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
     case WM_RBUTTONUP:
         if (self && self->m_owner_hwnd) {
-            HMENU menu = BuildHudContextMenu(self->m_position, self->m_fleet_menu_visible);
+            HMENU menu = BuildHudContextMenu(self->m_position, self->m_fleet_menu_visible,
+                                             self->m_fleet_devices,
+                                             self->m_selected_source_index);
             POINT pt{};
             GetCursorPos(&pt);
             SetForegroundWindow(self->m_owner_hwnd);

@@ -7,7 +7,9 @@ namespace Client {
 
 namespace {
 
-HMENU BuildContextMenu(bool logging_enabled, int hud_position, bool fleet_visible, bool fleet_ready) {
+HMENU BuildContextMenu(bool logging_enabled, int hud_position, bool fleet_visible, bool fleet_ready,
+                       const std::vector<TrayDeviceOption>& fleet_devices,
+                       int selected_source_index) {
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, TRAY_CMD_RESTORE, L"Restore");
     AppendMenuW(menu, MF_STRING, TRAY_CMD_HUD, L"Show HUD Bar");
@@ -26,8 +28,18 @@ HMENU BuildContextMenu(bool logging_enabled, int hud_position, bool fleet_visibl
     AppendMenuW(menu, MF_POPUP, (UINT_PTR)hud_menu, L"HUD Orientation");
 
     if (fleet_visible) {
-        AppendMenuW(menu, fleet_ready ? MF_STRING : MF_GRAYED,
-                    TRAY_CMD_FLEET_METRICS, L"Fleet Device Metrics...");
+        HMENU view_menu = CreatePopupMenu();
+        AppendMenuW(view_menu, MF_STRING | (selected_source_index < 0 ? MF_CHECKED : 0),
+                    TRAY_CMD_DASHBOARD_THIS_DEVICE, L"This Device");
+        for (size_t i = 0; i < fleet_devices.size() && i < 200; ++i) {
+            UINT flags = fleet_devices[i].online ? MF_STRING : MF_GRAYED;
+            if ((int)i == selected_source_index) flags |= MF_CHECKED;
+            AppendMenuW(view_menu, flags, TRAY_CMD_DASHBOARD_DEVICE_BASE + (UINT)i,
+                        fleet_devices[i].label.c_str());
+        }
+        AppendMenuW(menu, fleet_ready ? MF_POPUP : MF_POPUP | MF_GRAYED,
+                    (UINT_PTR)view_menu, L"Dashboard View");
+        AppendMenuW(menu, MF_STRING, TRAY_CMD_MANAGE_FLEET, L"Manage Fleet...");
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, TRAY_CMD_EXIT, L"Exit");
@@ -64,7 +76,7 @@ void SystemTray::SetTooltip(const wchar_t* tooltip) {
 }
 
 void SystemTray::ShowContextMenu() {
-    HMENU menu = BuildContextMenu(false, 0, false, false);
+    HMENU menu = BuildContextMenu(false, 0, false, false, {}, -1);
     POINT pt{};
     GetCursorPos(&pt);
     SetForegroundWindow(m_owner);
@@ -76,13 +88,16 @@ void SystemTray::ShowContextMenu() {
 
 void SystemTray::HandleMessage(HWND owner_hwnd, LPARAM lp, bool logging_enabled,
                                int hud_position, bool fleet_visible, bool fleet_ready,
+                               const std::vector<TrayDeviceOption>& fleet_devices,
+                               int selected_source_index,
                                const std::function<void(UINT)>& on_cmd) {
     switch (LOWORD(lp)) {
     case WM_LBUTTONDBLCLK:
         on_cmd(TRAY_CMD_RESTORE);
         break;
     case WM_RBUTTONUP: {
-        HMENU menu = BuildContextMenu(logging_enabled, hud_position, fleet_visible, fleet_ready);
+        HMENU menu = BuildContextMenu(logging_enabled, hud_position, fleet_visible, fleet_ready,
+                                      fleet_devices, selected_source_index);
         POINT pt{};
         GetCursorPos(&pt);
         SetForegroundWindow(owner_hwnd);

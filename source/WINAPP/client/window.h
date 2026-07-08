@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <atomic>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "renderer/d2d_context.h"
 #include "ui/sidebar.h"
@@ -71,6 +72,17 @@ private:
     uint64_t m_api_ticks = 0;
     std::string m_active_log_session_id;
 
+    struct TelemetrySource {
+        std::string id;
+        std::string label;
+        std::string address;
+        bool local = true;
+        bool online = true;
+    };
+    std::string m_selected_source_id = "local";
+    std::string m_selected_source_label = "This Device";
+    std::unordered_map<uint32_t, float> m_remote_snapshot_values;
+
     // Window metrics
     UINT  m_width     = 1600;
     UINT  m_height    = 960;
@@ -98,6 +110,14 @@ private:
     void SetHudPositionFromMenu(HudPosition pos);
     bool IsFleetMetricSelectionReady() const;
     bool IsFleetHostInstall() const;
+    std::vector<TelemetrySource> BuildTelemetrySources() const;
+    std::vector<TrayDeviceOption> BuildTrayDeviceOptions(int& selected_remote_index) const;
+    void SelectTelemetrySourceLocal();
+    void SelectTelemetrySourceByIndex(size_t index);
+    void ValidateSelectedTelemetrySource();
+    bool FetchSelectedRemoteSnapshot();
+    bool ReadRemoteSnapshotMetric(uint32_t id, float& out) const;
+    void ShowDashboardSourceMenu();
     std::string ProductDisplayName() const;
     std::string ProductRoleName() const;
     std::wstring ProductWindowTitle() const;

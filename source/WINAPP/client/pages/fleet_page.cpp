@@ -1219,6 +1219,10 @@ void FleetPage::ViewDevice(size_t index) {
         m_discovery_status = "Enroll " + row.address + " before opening remote telemetry. Candidate discovery proves reachability only.";
         return;
     }
+    if (m_on_view_remote) {
+        m_on_view_remote(row);
+        return;
+    }
     std::string summary;
     std::string error;
     if (FetchRemoteLabSnapshotSummary(row, summary, error)) {
@@ -1255,6 +1259,7 @@ void FleetPage::EnrollDevice(size_t index) {
     m_discovery_status = "Enrolled " + enrolled.name + " at " + enrolled.address +
         " as a trusted lab device. MAC hash is used as the primary duplicate key.";
     SaveDevices();
+    if (m_on_devices_changed) m_on_devices_changed();
 }
 
 void FleetPage::RefreshDevice(size_t index) {
@@ -1286,6 +1291,7 @@ void FleetPage::DeleteDevice(size_t index) {
     m_discovery_status = "Removed " + m_devices[index].address + " from Devices. Search LAN or Manual Add can rediscover it.";
     m_devices.erase(m_devices.begin() + static_cast<std::ptrdiff_t>(index));
     SaveDevices();
+    if (m_on_devices_changed) m_on_devices_changed();
 }
 
 void FleetPage::OnScroll(float delta) {
@@ -1345,11 +1351,13 @@ bool FleetPage::AddOrUpdateRemoteCandidate(const std::string& address, std::stri
             row.trusted = existing.trusted;
             existing = row;
             SaveDevices();
+            if (m_on_devices_changed) m_on_devices_changed();
             return true;
         }
     }
     m_devices.push_back(row);
     SaveDevices();
+    if (m_on_devices_changed) m_on_devices_changed();
     return true;
 }
 

@@ -41,6 +41,14 @@ void DashboardPage::PushMetricValue(uint32_t metric_id, float value) {
     if (it != m_waves.end()) it->second->Push(value);
 }
 
+void DashboardPage::ClearMetricValues() {
+    m_rings.clear();
+    for (auto& kv : m_waves) {
+        delete kv.second;
+    }
+    m_waves.clear();
+}
+
 const DashboardPage::LocalRing* DashboardPage::GetRing(uint32_t id) const {
     auto it = m_rings.find(id);
     return it != m_rings.end() ? &it->second : nullptr;
@@ -193,6 +201,22 @@ void DashboardPage::DrawSmallButton(float x, float y, float w, const wchar_t* la
 }
 
 void DashboardPage::DrawTopControls(float x, float y, float w) {
+    std::string label = "Dashboard View: " + (m_source_label.empty() ? std::string("This Device") : m_source_label);
+    std::wstring ws(label.begin(), label.end());
+    m_source_x = x + 14.0f;
+    m_source_y = y + 5.0f;
+    m_source_w = std::max(260.0f, std::min(520.0f, w - 880.0f));
+    m_source_h = 24.0f;
+    D2D1_RECT_F source_r = {m_source_x, m_source_y, m_source_x + m_source_w, m_source_y + m_source_h};
+    m_ctx.DC()->FillRoundedRectangle(D2D1::RoundedRect(source_r, 4, 4),
+        m_ctx.BrushSolid({0.12f, 0.15f, 0.19f, 0.96f}));
+    m_ctx.DC()->DrawRoundedRectangle(D2D1::RoundedRect(source_r, 4, 4),
+        m_ctx.BrushSolid({0.25f, 0.60f, 1.0f, 0.9f}), 0.8f);
+    m_ctx.DrawText(ws.c_str(), {source_r.left + 8.0f, source_r.top + 4.0f, source_r.right - 24.0f, source_r.bottom},
+                   {0.70f, 0.82f, 1.0f, 1.0f}, 11.0f, true);
+    m_ctx.DrawText(L"v", {source_r.right - 18.0f, source_r.top + 3.0f, source_r.right - 4.0f, source_r.bottom},
+                   {0.70f, 0.82f, 1.0f, 1.0f}, 10.0f, true);
+
     float bx = x + w - (m_edit_mode ? 612.0f : 232.0f);
     DrawSmallButton(bx, y + 6.0f, 104.0f, m_edit_mode ? L"Save & Close" : L"Edit Dashboard",
                     m_edit_mode ? EDIT_SAVE_CLOSE : EDIT_TOGGLE);
@@ -585,6 +609,13 @@ void DashboardPage::DrawLed(const MetricPanel& mp, float val,
 // ── Click / Scroll ────────────────────────────────────────────────────────────
 
 void DashboardPage::OnClick(float x, float y) {
+    if (!m_edit_mode &&
+        x >= m_source_x && x <= m_source_x + m_source_w &&
+        y >= m_source_y && y <= m_source_y + m_source_h) {
+        if (m_on_source_menu_requested) m_on_source_menu_requested();
+        return;
+    }
+
     if (m_edit_mode &&
         m_edit_content_h > std::max(1.0f, m_edit_h - 68.0f) + 1.0f &&
         x >= m_edit_scroll_rail_x0 && x <= m_edit_scroll_rail_x1 &&

@@ -48,17 +48,21 @@ public:
     explicit FleetPage(D2DContext& ctx);
 
     using SimpleCb = std::function<void()>;
+    using DeviceCb = std::function<void(const FleetDeviceRow&)>;
     using ChooseFolderCb = std::function<bool(std::string&)>;
     using JobCb = std::function<bool(const FleetLoggingJob&, std::string&)>;
 
     void SetOnViewLocal(SimpleCb cb) { m_on_view_local = std::move(cb); }
+    void SetOnViewRemote(DeviceCb cb) { m_on_view_remote = std::move(cb); }
     void SetOnChooseLogFolder(ChooseFolderCb cb) { m_on_choose_log_folder = std::move(cb); }
     void SetOnStartLocalJob(JobCb cb) { m_on_start_local_job = std::move(cb); }
     void SetOnStopLocalJob(SimpleCb cb) { m_on_stop_local_job = std::move(cb); }
+    void SetOnDevicesChanged(SimpleCb cb) { m_on_devices_changed = std::move(cb); }
 
     void SetServiceConnected(bool connected) { m_service_connected = connected; }
     void SetLocalHost(const std::string& hostname);
     void SetStoragePath(const std::string& path);
+    const std::vector<FleetDeviceRow>& Devices() const { return m_devices; }
 
     void Draw(float x, float y, float w, float h, float dpi_scale);
     void OnClick(float x, float y);
@@ -75,9 +79,11 @@ private:
     std::vector<FleetLoggingJob> m_jobs;
     std::vector<ButtonRect> m_buttons;
     SimpleCb m_on_view_local;
+    DeviceCb m_on_view_remote;
     ChooseFolderCb m_on_choose_log_folder;
     JobCb m_on_start_local_job;
     SimpleCb m_on_stop_local_job;
+    SimpleCb m_on_devices_changed;
 
     bool m_service_connected = false;
     bool m_discovery_attempted = false;
