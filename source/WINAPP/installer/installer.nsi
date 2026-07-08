@@ -64,7 +64,6 @@ Var EXISTING_INSTALL_DIR
 Var EXISTING_UNINSTALLER
 Var MAINT_ACTION
 Var MAINT_REPAIR_RADIO
-Var MAINT_CONFIG_RADIO
 Var MAINT_UNINSTALL_RADIO
 Var CAN_MANAGE_FLEET
 Var DISCOVERY_ENABLED
@@ -222,7 +221,24 @@ FunctionEnd
 
 Function MaintenancePageCreate
     ${If} $EXISTING_INSTALL_DIR == ""
-        Abort
+        !insertmacro MUI_HEADER_TEXT "New Install" "TelemetryApp is not currently installed on this device."
+        nsDialogs::Create 1018
+        Pop $0
+        ${If} $0 == error
+            Abort
+        ${EndIf}
+
+        ${NSD_CreateLabel} 0 0 100% 18u "Setup will perform a new TelemetryApp ${PRODUCT_VERSION} installation."
+        Pop $0
+        ${NSD_CreateGroupBox} 0 26u 100% 76u "New install"
+        Pop $0
+        ${NSD_CreateLabel} 12u 44u 92% 14u "The next pages choose install location, deployment role, startup behavior, and firewall permissions."
+        Pop $0
+        ${NSD_CreateLabel} 12u 68u 92% 16u "No existing TelemetryApp service registration was detected."
+        Pop $0
+        StrCpy $MAINT_ACTION "Install"
+        nsDialogs::Show
+        Return
     ${EndIf}
 
     !insertmacro MUI_HEADER_TEXT "Maintenance Options" "TelemetryApp is already installed on this device."
@@ -235,31 +251,22 @@ Function MaintenancePageCreate
     ${NSD_CreateLabel} 0 0 100% 12u "Choose a maintenance action. Data, API keys, dashboards, and logs are preserved."
     Pop $0
 
-    ${NSD_CreateGroupBox} 0 20u 100% 118u "Existing installation"
+    ${NSD_CreateGroupBox} 0 20u 100% 96u "Existing installation"
     Pop $0
     ${NSD_CreateLabel} 12u 36u 92% 10u "$EXISTING_INSTALL_DIR"
     Pop $0
 
-    ${NSD_CreateRadioButton} 12u 56u 34% 10u "Update / repair"
+    ${NSD_CreateRadioButton} 12u 56u 58% 10u "Update / repair / modify role"
     Pop $MAINT_REPAIR_RADIO
-    ${NSD_CreateLabel} 34u 68u 88% 10u "Refresh files, registry, environment, shortcuts, and service registration."
+    ${NSD_CreateLabel} 34u 68u 88% 18u "Refresh files, registry, environment, shortcuts, service registration, deployment role, and startup behavior."
     Pop $0
-    ${NSD_CreateRadioButton} 12u 82u 34% 10u "Modify role / startup"
-    Pop $MAINT_CONFIG_RADIO
-    ${NSD_CreateLabel} 34u 94u 88% 10u "Promote/demote this install or change startup behavior."
-    Pop $0
-    ${NSD_CreateRadioButton} 12u 108u 34% 10u "Uninstall"
+    ${NSD_CreateRadioButton} 12u 92u 34% 10u "Uninstall"
     Pop $MAINT_UNINSTALL_RADIO
-    ${NSD_CreateLabel} 34u 120u 88% 10u "Remove app and service; preserve local data and logs."
+    ${NSD_CreateLabel} 34u 104u 88% 10u "Remove app and service; preserve local data and logs."
     Pop $0
 
     ${If} $MAINT_ACTION == "Uninstall"
         ${NSD_Check} $MAINT_UNINSTALL_RADIO
-    ${ElseIf} $MAINT_ACTION == "Modify"
-        ${NSD_Check} $MAINT_CONFIG_RADIO
-    ${ElseIf} $MAINT_ACTION == "Configure"
-        StrCpy $MAINT_ACTION "Modify"
-        ${NSD_Check} $MAINT_CONFIG_RADIO
     ${Else}
         StrCpy $MAINT_ACTION "Repair"
         ${NSD_Check} $MAINT_REPAIR_RADIO
@@ -270,6 +277,7 @@ FunctionEnd
 
 Function MaintenancePageLeave
     ${If} $EXISTING_INSTALL_DIR == ""
+        StrCpy $MAINT_ACTION "Install"
         Return
     ${EndIf}
 
@@ -289,11 +297,6 @@ Function MaintenancePageLeave
         cancel_uninstall:
             Abort
     ${Else}
-        ${NSD_GetState} $MAINT_CONFIG_RADIO $0
-        ${If} $0 == ${BST_CHECKED}
-            StrCpy $MAINT_ACTION "Modify"
-            Return
-        ${EndIf}
         StrCpy $MAINT_ACTION "Repair"
     ${EndIf}
 FunctionEnd
@@ -323,7 +326,7 @@ Function DeploymentRolePageCreate
     Pop $MODE_SENSORCLIENT_RADIO
     ${NSD_CreateLabel} 34u 106u 88% 10u "Reports only this device; cannot manage other devices."
     Pop $0
-    ${NSD_CreateLabel} 34u 124u 88% 10u "To promote later, rerun setup and choose Modify role / startup."
+    ${NSD_CreateLabel} 34u 124u 88% 10u "To promote later, rerun setup and choose Update / repair / modify role."
     Pop $0
 
     ${If} $INSTALL_MODE == "SensorClient"

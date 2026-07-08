@@ -51,6 +51,7 @@ public:
     void SetPosition(HudPosition pos);
     HudPosition Position() const { return m_position; }
     void SetFleetMenuVisible(bool visible) { m_fleet_menu_visible = visible; }
+    void SetRecordingActive(bool active) { m_recording_active = active; }
     void SetFleetDeviceOptions(std::vector<TrayDeviceOption> devices, int selected_source_index) {
         m_fleet_devices = std::move(devices);
         m_selected_source_index = selected_source_index;
@@ -87,6 +88,7 @@ private:
     RECT m_bar_rect{};  // screen coordinates of the bar window
     bool m_appbar_registered = false;
     bool m_fleet_menu_visible = false;
+    bool m_recording_active = false;
     std::vector<TrayDeviceOption> m_fleet_devices;
     int  m_selected_source_index = -1;
     int  m_hover_index = -1;

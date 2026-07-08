@@ -110,6 +110,7 @@ private:
     void SetHudPositionFromMenu(HudPosition pos);
     bool IsFleetMetricSelectionReady() const;
     bool IsFleetHostInstall() const;
+    bool RecordingActive() const;
     std::vector<TelemetrySource> BuildTelemetrySources() const;
     std::vector<TrayDeviceOption> BuildTrayDeviceOptions(int& selected_remote_index) const;
     void SelectTelemetrySourceLocal();

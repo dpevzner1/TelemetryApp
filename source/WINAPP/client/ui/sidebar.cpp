@@ -58,6 +58,17 @@ void Sidebar::Draw(float height, float dpi_scale) {
 
     dc->FillRectangle({0, 0, WIDTH, height}, br_bg);
 
+    DWORD tick = GetTickCount();
+    bool rec_on = recording_active && ((tick / 450) % 2 == 0);
+    D2D1_COLOR_F rec_col = recording_active
+        ? (rec_on ? D2D1_COLOR_F{1.00f, 0.12f, 0.10f, 1.0f} : D2D1_COLOR_F{0.40f, 0.05f, 0.05f, 1.0f})
+        : D2D1_COLOR_F{0.28f, 0.28f, 0.32f, 1.0f};
+    dc->FillEllipse({{10.0f, 14.0f}, 4.5f, 4.5f}, m_ctx.BrushSolid(rec_col));
+    dc->DrawEllipse({{10.0f, 14.0f}, 5.5f, 5.5f}, m_ctx.BrushSolid(recording_active ? kRed : kTextDim), 0.8f);
+    m_ctx.DrawText(recording_active ? L"REC" : L"Idle",
+        {18.0f, 7.0f, 58.0f, 22.0f},
+        recording_active ? kRed : kTextDim, 9.0f, true);
+
     std::wstring role = Widen(m_product_role);
     std::wstring ver = Widen(m_product_version);
     m_ctx.DrawText(L"TelemetryApp", {12.0f, 8.0f, WIDTH - 8.0f, 30.0f}, kLogoText, 14.0f, true);

@@ -48,6 +48,7 @@ public:
 
     // Status bar fields (set by window each tick)
     bool   service_connected = false;
+    bool   recording_active = false;
     int    active_key_count  = 0;
     std::string service_address;
 

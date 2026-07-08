@@ -687,8 +687,10 @@ void AppWindow::OnRender() {
     float h  = (float)m_height;
 
     m_sidebar->service_connected = m_shm_open;
+    m_sidebar->recording_active = RecordingActive();
     m_sidebar->active_key_count  = (int)m_key_cache.size();
     m_sidebar->service_address   = m_last_service_connected ? m_service_display_address : "LAN: unavailable";
+    m_overlay.SetRecordingActive(RecordingActive());
     ValidateSelectedTelemetrySource();
     {
         int selected_remote = -1;
@@ -759,6 +761,7 @@ void AppWindow::OnDataTick() {
 
     // Feed HUD overlay
     if (m_overlay.IsVisible()) {
+        m_overlay.SetRecordingActive(RecordingActive());
         for (const auto& hm : m_overlay.Metrics()) {
             if (remote_source) {
                 float v = 0.0f;
@@ -935,6 +938,12 @@ bool AppWindow::IsFleetMetricSelectionReady() const {
 
 bool AppWindow::IsFleetHostInstall() const {
     return _stricmp(m_config.install_mode.c_str(), "FleetHost") == 0;
+}
+
+bool AppWindow::RecordingActive() const {
+    return !m_active_log_session_id.empty() ||
+           (m_metrics_page && m_metrics_page->LoggingEnabled()) ||
+           m_config.logging_enabled;
 }
 
 std::vector<AppWindow::TelemetrySource> AppWindow::BuildTelemetrySources() const {

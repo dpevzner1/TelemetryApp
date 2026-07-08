@@ -386,14 +386,28 @@ void CompactOverlay::DrawHorizontal() {
     float h = (float)(r.bottom - r.top);
     float w = (float)(r.right - r.left);
 
-    // App brand strip (left)
+    // App brand strip and capture indicator (left)
     m_br->SetColor({0.25f, 0.60f, 1.00f, 1.0f});
     m_rt->FillRectangle({0, 0, 4, h}, m_br.Get());
+    DWORD tick = GetTickCount();
+    bool rec_on = m_recording_active && ((tick / 450) % 2 == 0);
+    D2D1_COLOR_F rec_col = m_recording_active
+        ? (rec_on ? D2D1_COLOR_F{1.0f, 0.10f, 0.08f, 1.0f} : D2D1_COLOR_F{0.42f, 0.04f, 0.04f, 1.0f})
+        : D2D1_COLOR_F{0.30f, 0.30f, 0.34f, 1.0f};
+    m_br->SetColor(rec_col);
+    m_rt->FillEllipse({{13.0f, 11.0f}, 4.5f, 4.5f}, m_br.Get());
+    m_br->SetColor(m_recording_active ? D2D1_COLOR_F{1.0f, 0.20f, 0.18f, 1.0f}
+                                      : D2D1_COLOR_F{0.45f, 0.45f, 0.50f, 1.0f});
+    m_rt->DrawEllipse({{13.0f, 11.0f}, 5.5f, 5.5f}, m_br.Get(), 0.8f);
+    const wchar_t* rec_label = m_recording_active ? L"REC" : L"Idle";
+    m_rt->DrawText(rec_label, (UINT32)wcslen(rec_label), m_fmt_label.Get(),
+        {22.0f, 3.0f, 54.0f, 16.0f}, m_br.Get());
 
     // Metric cells
     int n = (int)m_metrics.size();
-    float cell_w = (w - 8.0f) / std::max(n, 1);
-    float x = 8.0f;
+    float left_pad = 58.0f;
+    float cell_w = (w - left_pad - 4.0f) / std::max(n, 1);
+    float x = left_pad;
 
     for (int i = 0; i < n; ++i) {
         const auto& m = m_metrics[i];
@@ -460,9 +474,21 @@ void CompactOverlay::DrawVertical() {
 
     m_rt->Clear({0.09f, 0.09f, 0.11f, 1.0f});
 
+    DWORD tick = GetTickCount();
+    bool rec_on = m_recording_active && ((tick / 450) % 2 == 0);
+    D2D1_COLOR_F rec_col = m_recording_active
+        ? (rec_on ? D2D1_COLOR_F{1.0f, 0.10f, 0.08f, 1.0f} : D2D1_COLOR_F{0.42f, 0.04f, 0.04f, 1.0f})
+        : D2D1_COLOR_F{0.30f, 0.30f, 0.34f, 1.0f};
+    m_br->SetColor(rec_col);
+    m_rt->FillEllipse({{w * 0.5f, 12.0f}, 4.5f, 4.5f}, m_br.Get());
+    m_br->SetColor(m_recording_active ? D2D1_COLOR_F{1.0f, 0.20f, 0.18f, 1.0f}
+                                      : D2D1_COLOR_F{0.45f, 0.45f, 0.50f, 1.0f});
+    m_rt->DrawEllipse({{w * 0.5f, 12.0f}, 5.5f, 5.5f}, m_br.Get(), 0.8f);
+
     int n = (int)m_metrics.size();
-    float cell_h = h / std::max(n, 1);
-    float y = 0.0f;
+    float top_pad = 26.0f;
+    float cell_h = (h - top_pad) / std::max(n, 1);
+    float y = top_pad;
 
     for (int i = 0; i < n; ++i) {
         const auto& m = m_metrics[i];
