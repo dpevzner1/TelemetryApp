@@ -192,6 +192,7 @@ json EnterpriseConfigJson(bool public_view) {
     j["install_mode"] = s_cfg.install_mode;
     j["enrollment_state"] = s_cfg.enrollment_state;
     j["sensor_id_hash"] = ShortPublicHash(s_cfg.sensor_id);
+    j["device_id"] = ShortPublicHash(s_cfg.sensor_id);
     j["mac_hash"] = PrimaryMacHash();
     j["host_url_configured"] = !s_cfg.host_url.empty();
     j["remote_tls_required"] = true;
@@ -228,6 +229,9 @@ bool RecordLabEnrollment(const std::string& host_name,
     s_cfg.enrolled_host_name = host_name;
     s_cfg.enrolled_host_instance = host_instance;
     s_cfg.enrolled_host_address = host_address;
+    if (host_address.rfind("http://", 0) == 0 || host_address.rfind("https://", 0) == 0) {
+        s_cfg.host_url = host_address;
+    }
     s_cfg.enrolled_at_ms = NowMs();
     SaveConfig();
     DiagnosticLogInfo("Lab enrollment accepted for host=" + host_name +

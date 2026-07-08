@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <algorithm>
 #include <sstream>
+#include <fstream>
+#include <set>
 #include "http_server.h"
 #include "shm_writer.h"
 #include "../diagnostic_log.h"
@@ -30,6 +32,13 @@ static std::string s_service_url = "http://localhost:8765";
 
 static void ErrResp(httplib::Response& res, int status,
                     const char* error_code, const char* message);
+
+static int64_t NowMs() {
+    FILETIME ft{};
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
+    return static_cast<int64_t>((u.QuadPart - 116444736000000000ULL) / 10000ULL);
+}
 
 static bool EnvFlagEnabled(const char* name) {
     const char* v = getenv(name);
@@ -342,6 +351,133 @@ static bool LabEnrollmentAllowed(httplib::Response& res) {
     res.set_content(R"({"error":"lab enrollment required"})", "application/json");
     DiagnosticLogWarn("Rejected lab remote request before explicit enrollment.");
     return false;
+}
+
+static std::string FleetDevicesPath() {
+    return GetEnterpriseConfig().data_dir + "\\fleet_devices.json";
+}
+
+static bool IsFleetHostMode() {
+    const auto& mode = GetEnterpriseConfig().install_mode;
+    return mode == "FleetHost";
+}
+
+static void AppendUniqueAddress(json& row, const std::string& address) {
+    if (address.empty()) return;
+    json history = row.value("address_history", json::array());
+    if (!history.is_array()) history = json::array();
+    json next = json::array();
+    bool seen = false;
+    for (const auto& v : history) {
+        if (!v.is_string()) continue;
+        std::string s = v.get<std::string>();
+        if (s == address) seen = true;
+        if (next.size() < 12) next.push_back(s);
+    }
+    if (!seen) next.push_back(address);
+    while (next.size() > 12) next.erase(next.begin());
+    row["address_history"] = next;
+}
+
+static bool SameFleetDevice(const json& row,
+                            const std::string& device_id,
+                            const std::string& sensor_hash,
+                            const std::string& mac_hash,
+                            const std::string& address) {
+    return (!device_id.empty() && row.value("device_id", "") == device_id) ||
+           (!sensor_hash.empty() && row.value("sensor_hash", "") == sensor_hash) ||
+           (!mac_hash.empty() && row.value("mac_hash", "") == mac_hash) ||
+           (!address.empty() && row.value("address", "") == address);
+}
+
+static bool MergeFleetHeartbeat(const httplib::Request& req,
+                                const json& body,
+                                json& response) {
+    int api_port = body.value("api_port", HTTP_PORT);
+    if (api_port <= 0 || api_port > 65535) api_port = HTTP_PORT;
+    std::string remote = req.remote_addr;
+    if (remote == "::ffff:127.0.0.1") remote = "127.0.0.1";
+    if (remote.rfind("::ffff:", 0) == 0) remote = remote.substr(7);
+    std::string address = remote + ":" + std::to_string(api_port);
+    std::string sensor_hash = body.value("sensor_id_hash", "");
+    std::string device_id = body.value("device_id", sensor_hash);
+    std::string mac_hash = body.value("mac_hash", "");
+    std::string hostname = body.value("hostname", "");
+    std::string role = body.value("install_mode", "SensorClient");
+    std::string enrollment_state = body.value("enrollment_state", "not_enrolled");
+    const int64_t now = NowMs();
+
+    json root;
+    {
+        std::ifstream f(FleetDevicesPath());
+        if (f.is_open()) root = json::parse(f, nullptr, false);
+    }
+    if (!root.is_object()) root = json::object();
+    root["schema"] = 2;
+    root["truth_model"] = "device_id/sensor_hash and mac_hash reconcile IP churn; heartbeat creates candidates but never auto-trusts";
+    if (!root.contains("devices") || !root["devices"].is_array()) root["devices"] = json::array();
+
+    bool matched = false;
+    bool trusted = false;
+    for (auto& row : root["devices"]) {
+        if (!row.is_object()) continue;
+        if (!SameFleetDevice(row, device_id, sensor_hash, mac_hash, address)) continue;
+        matched = true;
+        trusted = row.value("trusted", false);
+        AppendUniqueAddress(row, row.value("address", ""));
+        AppendUniqueAddress(row, address);
+        row["name"] = hostname.empty() ? row.value("name", "TelemetryApp Sensor") : hostname;
+        row["hostname"] = hostname;
+        row["role"] = role;
+        row["address"] = address;
+        row["last_seen_address"] = address;
+        row["last_seen_at_ms"] = now;
+        row["state"] = "Online";
+        row["os"] = "Windows";
+        row["device_id"] = device_id;
+        row["sensor_hash"] = sensor_hash;
+        row["mac_hash"] = mac_hash;
+        row["enrollment_state"] = enrollment_state;
+        row["trusted"] = trusted;
+        row["last_error"] = "";
+        break;
+    }
+
+    if (!matched) {
+        json row;
+        row["name"] = hostname.empty() ? ("Sensor " + sensor_hash) : hostname;
+        row["hostname"] = hostname;
+        row["role"] = role;
+        row["address"] = address;
+        row["last_seen_address"] = address;
+        row["last_seen_at_ms"] = now;
+        row["state"] = "Online";
+        row["os"] = "Windows";
+        row["device_id"] = device_id;
+        row["sensor_hash"] = sensor_hash;
+        row["mac_hash"] = mac_hash;
+        row["enrollment_state"] = enrollment_state;
+        row["trusted"] = false;
+        row["last_error"] = "";
+        row["address_history"] = json::array({address});
+        root["devices"].push_back(row);
+    }
+
+    std::ofstream out(FleetDevicesPath(), std::ios::trunc);
+    if (!out.is_open()) return false;
+    out << root.dump(2);
+
+    response["accepted"] = true;
+    response["matched_existing"] = matched;
+    response["trusted"] = trusted;
+    response["device_id"] = device_id;
+    response["sensor_id_hash"] = sensor_hash;
+    response["mac_hash"] = mac_hash;
+    response["address"] = address;
+    response["message"] = matched
+        ? "Heartbeat merged into existing fleet device record."
+        : "Heartbeat created an untrusted fleet candidate.";
+    return true;
 }
 
 static bool ParseSessionStartBody(const httplib::Request& req,
@@ -795,6 +931,28 @@ bool HttpServerInit() {
             res.status = 400;
             res.set_content(R"({"error":"invalid enrollment body"})", "application/json");
         }
+    });
+
+    // POST /api/v1/fleet/heartbeat
+    // Sensor call-home keeps fleet inventory current after DHCP/IP changes.
+    // It never grants trust; it only creates or updates candidate records.
+    s_svr->Post("/api/v1/fleet/heartbeat", [](const httplib::Request& req, httplib::Response& res) {
+        if (!IsFleetHostMode()) {
+            ErrResp(res, 403, "ERR_NOT_FLEET_HOST", "Fleet heartbeat is accepted only by a Fleet Manager install.");
+            return;
+        }
+        json body = json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+        if (!body.is_object() || body.value("product", "") != "TelemetryApp") {
+            ErrResp(res, 400, "ERR_INVALID_HEARTBEAT", "Heartbeat body must be TelemetryApp JSON.");
+            return;
+        }
+        json out;
+        if (!MergeFleetHeartbeat(req, body, out)) {
+            ErrResp(res, 500, "ERR_HEARTBEAT_STORE", "Fleet heartbeat could not be persisted.");
+            return;
+        }
+        res.status = 202;
+        res.set_content(out.dump(), "application/json");
     });
 
     // GET /api/v1/install/audit

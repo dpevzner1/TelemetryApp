@@ -93,8 +93,8 @@ An app or script can call TelemetryApp, tell it which process or executable to w
 | ETW/deep OS trace | Not implemented | 0 | WPR/WPA dominate ETW traces | Possible future optional capture mode | Low-medium |
 | File/registry activity tracing | Not implemented | 0 | Process Monitor dominates | Out of scope unless process diagnostics expands | Low |
 | Prometheus export | Implemented | 3 | windows_exporter is mature and broadly adopted | Good adjunct, not full replacement | Medium |
-| Fleet/local network monitoring | Fleet navigation, trusted local-device view, enrollment readiness contract, and fleet logging job wizard exist; secure remote inventory, collector, and remote dashboard drill-in pending | 2 | Datadog dominates hosted fleet workflows; PRTG/Zabbix are mature network monitoring systems | Promising local-first fleet lane, not yet production-grade | High after local UX/security gates |
-| Remote real-time device dashboard | Planned: selected enrolled device should reuse dashboard-style telemetry views with source-qualified remote snapshots | 1 | Datadog, PRTG, Zabbix, and Grafana are mature for remote live views | Important differentiator if kept local-first and simple | High for fleet release |
+| Fleet/local network monitoring | Fleet navigation, readiness/manual add, explicit lab enrollment, durable identity, heartbeat call-home, address history, and fleet logging job wizard exist; TLS/mTLS and enterprise token lifecycle remain pending | 3 | Datadog dominates hosted fleet workflows; PRTG/Zabbix are mature network monitoring systems | Useful local lab fleet lane, not yet enterprise-grade | High after local UX/security gates |
+| Remote real-time device dashboard | Fleet Manager can switch to enrolled device snapshots and preserve devices across IP changes by stable identity; richer remote streaming and credentialed dispatch remain next hardening | 2 | Datadog, PRTG, Zabbix, and Grafana are mature for remote live views | Important differentiator if kept local-first and simple | High for fleet release |
 | User-facing simplicity | Improved through consolidated menus, dashboard editor controls, folder-prompt logging, and wizard-guided fleet logging; still needs live testing | 3 | Consumer tools are simpler for their narrower tasks | Main adoption risk is regression in new controls | High |
 | Installer/package readiness | Installer and portable package build, plant README/API/LICENSE in root, support repair/update/modify/uninstall, and stop running processes before replacement | 3 | Commercial tools have polished installers | Usable release-candidate state; still needs clean-machine validation | High |
 
@@ -132,7 +132,7 @@ Current score split:
 | Script/API process-run capture | `A-` | Strongest differentiator: process/session/log-folder control is substantially ahead of normal desktop sensor tools. |
 | Hardware sensor breadth | `C+` | Good general coverage; behind HWiNFO/AIDA64 sensor depth and motherboard-specific coverage. |
 | Power/electrical telemetry | `C-` | Source-qualified direction is correct; comprehensive multi-vendor electrical accounting remains early. |
-| Fleet/remote monitoring | `C` | Fleet UI, local trusted view, readiness contract, and logging jobs exist; real remote live telemetry is still architectural/planned work. |
+| Fleet/remote monitoring | `C+` | Fleet UI, readiness/manual add, lab enrollment, remote snapshot/logging hooks, and heartbeat identity reconciliation now exist; TLS/mTLS, one-time tokens, and enterprise inventory policy still gate production use. |
 | Installer/enterprise lifecycle | `B-` | Registry/env/service groundwork, maintenance mode, role modification, and install-root docs exist; TLS/enrollment and clean-machine validation still gate enterprise acceptance. |
 
 Near-term target grade: `B+`.

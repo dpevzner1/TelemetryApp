@@ -12,7 +12,7 @@ This folder is a clean export staging area for the current native Windows Teleme
 
 ## Current Product Truth
 
-TelemetryApp is currently strongest as a local-first Windows telemetry tool for small labs, AI/data-processing workstations, and technician-managed device groups. Fleet discovery and explicit lab enrollment are implemented. Remote live dashboards and remote fleet logging dispatch still require credentialed host-to-sensor telemetry dispatch plus TLS/mTLS hardening before they should be described as enterprise-grade remote telemetry.
+TelemetryApp is currently strongest as a local-first Windows telemetry tool for small labs, AI/data-processing workstations, and technician-managed device groups. Fleet discovery, explicit lab enrollment, remote snapshot/logging hooks, and heartbeat call-home for changed sensor IP addresses are implemented. Enterprise-grade remote telemetry still requires one-time tokens, TLS/mTLS, certificate pinning, and formal inventory policy.
 
 ## Push Readiness
 

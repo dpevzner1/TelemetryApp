@@ -6,6 +6,7 @@ set(SERVICE_SOURCES
     main.cpp
     diagnostic_log.cpp
     enterprise_config.cpp
+    fleet_heartbeat.cpp
     service_control.cpp
     poll_loop.cpp
     validation.cpp

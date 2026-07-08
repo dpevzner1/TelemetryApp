@@ -10,6 +10,7 @@
 #include "api_key_store.h"
 #include "log_session.h"
 #include "enterprise_config.h"
+#include "fleet_heartbeat.h"
 #include "diagnostic_log.h"
 #include "ipc/pipe_server.h"
 #include "ipc/http_server.h"
@@ -21,6 +22,7 @@ static std::atomic<bool>* g_console_stop = nullptr;
 static std::thread        g_poll_thread;
 static std::thread        g_pipe_thread;
 static std::thread        g_http_thread;
+static std::thread        g_heartbeat_thread;
 
 static void EnsureDir(const std::string& path) {
     DiagnosticLogInfo("Ensuring directory: " + path);
@@ -176,10 +178,12 @@ static void WINAPI ServiceMain(DWORD, LPWSTR*) {
     g_poll_thread = std::thread([&]{ PollLoopRun(g_stop); });
     g_pipe_thread = std::thread([&]{ PipeServerRun(g_stop); });
     g_http_thread = std::thread([&]{ HttpServerRun(g_stop); });
+    g_heartbeat_thread = std::thread([&]{ FleetHeartbeatRun(g_stop); });
 
     g_poll_thread.join();
     g_pipe_thread.join();
     g_http_thread.join();
+    g_heartbeat_thread.join();
 
     PollLoopShutdown();
     PipeServerShutdown();
@@ -319,6 +323,7 @@ int wmain(int argc, wchar_t* argv[]) {
             g_poll_thread = std::thread([&]{ PollLoopRun(stop); });
             g_pipe_thread = std::thread([&]{ PipeServerRun(stop); });
             g_http_thread = std::thread([&]{ HttpServerRun(stop); });
+            g_heartbeat_thread = std::thread([&]{ FleetHeartbeatRun(stop); });
             wprintf(noninteractive
                 ? L"Running in non-interactive console mode. Stop the process to exit.\n"
                 : L"Running in console. Press Enter to stop.\n");
@@ -328,7 +333,7 @@ int wmain(int argc, wchar_t* argv[]) {
                 _getwch();
             }
             stop.store(true);
-            g_poll_thread.join(); g_pipe_thread.join(); g_http_thread.join();
+            g_poll_thread.join(); g_pipe_thread.join(); g_http_thread.join(); g_heartbeat_thread.join();
             PollLoopShutdown(); PipeServerShutdown(); HttpServerShutdown();
             g_console_stop = nullptr;
             DiagnosticLogInfo("Console run stopped cleanly.");

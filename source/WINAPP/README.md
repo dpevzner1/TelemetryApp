@@ -178,6 +178,14 @@ Metrics:
 - `Metrics -> BAR All` selects all eligible HUD/bar metrics.
 - Metric groups have clear scrolling and group-level `ALL` selection.
 
+Fleet:
+- `Fleet -> Search LAN` probes local subnet readiness endpoints and creates untrusted candidates.
+- `Fleet -> Manual Add` probes a specific `ip:port` shown by a remote sensor.
+- `Fleet -> Enroll` makes an operator-approved lab trust record for a candidate.
+- Enrolled sensors store the Fleet Host URL and call back with `POST /api/v1/fleet/heartbeat`; the Fleet Host reconciles records by `device_id`/`sensor_hash` and `mac_hash`, updates `last_seen_address`, and keeps an `address_history`.
+- Heartbeat never auto-enrolls or auto-trusts a device. A changed IP updates an existing trusted row only when the stable identity matches.
+- Sensor Client installs cannot discover, poll, or manage other devices. Fleet navigation and cross-device dashboard switching are Fleet Manager functions.
+
 HUD / minimized bar:
 - `Settings -> HUD / Minimize Behavior` selects normal minimize, HUD bar, or tray behavior.
 - `Settings -> HUD position` selects above taskbar, top edge, left edge, or right edge.

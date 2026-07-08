@@ -1,11 +1,7 @@
-build/
-build_release/
 bin/
 dist/
-*.obj
-*.pdb
-*.ilk
-*.log
+build*/
+.vs/
 *.user
 *.suo
-.vs/
+*.log

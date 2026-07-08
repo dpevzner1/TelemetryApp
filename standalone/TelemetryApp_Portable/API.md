@@ -13,7 +13,7 @@ http://localhost:8765
 
 ## Authentication
 
-All endpoints except `/metrics`, `/api/v1/health`, `/api/v1/enrollment/readiness`, and the explicit lab bootstrap endpoint `/api/v1/enrollment/request` require the following header:
+All endpoints except `/metrics`, `/api/v1/health`, `/api/v1/enrollment/readiness`, the explicit lab bootstrap endpoint `/api/v1/enrollment/request`, and Fleet Manager heartbeat intake `/api/v1/fleet/heartbeat` require the following header:
 
 ```
 X-API-Key: <your-api-key>
@@ -61,6 +61,7 @@ Current remote fleet truth: local sessions are live; discovered sensors can be c
 | GET | `/api/v1/diagnostics` | Required | Service diagnostics and runtime counters |
 | GET | `/api/v1/enrollment/readiness` | None | Non-secret sensor readiness metadata for manual add/candidate discovery |
 | POST | `/api/v1/enrollment/request` | None | Explicit lab enrollment request; validates public sensor fingerprint and records sensor acknowledgement |
+| POST | `/api/v1/fleet/heartbeat` | None, Fleet Manager only | Sensor call-home inventory update; reconciles IP changes by device/sensor/MAC hash and never auto-trusts |
 | GET | `/api/v1/lab/snapshot` | None after enrollment | Lab-enrolled remote snapshot for Fleet View |
 | POST | `/api/v1/lab/sessions` | None after enrollment | Lab-enrolled remote logging session start |
 | POST | `/api/v1/lab/sessions/<id>/stop` | None after enrollment | Lab-enrolled remote logging session stop |
@@ -113,6 +114,23 @@ Current implementation exposes source-qualified GPU power where available, CPU p
 `GET /api/v1/enrollment/readiness` is intentionally public and returns only non-secret candidate metadata: product, hostname, install mode, sensor ID hash, MAC hash, host URL configured state, and remote TLS requirement. Discovery is not trust. Raw MAC addresses are reserved for trusted/enrolled inventory APIs because they are stable hardware identifiers.
 
 `POST /api/v1/enrollment/request` accepts explicit lab enrollment when the request sets `accept_lab_enrollment:true` and the submitted `sensor_id_hash` matches the sensor readiness fingerprint. If a `mac_hash` is supplied, it must also match. Accepted enrollment records `enrolled_lab` on the sensor and returns the same public identity metadata with `accepted:true`. This is operator-driven lab trust for local fleet testing, not enterprise cryptographic trust. A future release must add one-time token validation, TLS/mTLS, certificate/thumbprint pinning, and token invalidation before accepting remote telemetry as enterprise-grade.
+
+`POST /api/v1/fleet/heartbeat` is accepted only by a Fleet Manager install. It is used by a sensor with a configured `host_url` to call home with public identity metadata:
+
+```json
+{
+  "product": "TelemetryApp",
+  "hostname": "LAB-GPU-01",
+  "install_mode": "SensorClient",
+  "enrollment_state": "enrolled_lab",
+  "device_id": "public-sensor-hash",
+  "sensor_id_hash": "public-sensor-hash",
+  "mac_hash": "public-mac-hash",
+  "api_port": 8765
+}
+```
+
+The Fleet Manager derives the current `ip:port` from the TCP peer address plus `api_port`, then merges the record by `device_id`, `sensor_id_hash`, `mac_hash`, or existing address. It updates `last_seen_address`, `last_seen_at_ms`, and `address_history` in `%TELEMETRY_DATA_DIR%\fleet_devices.json`. Heartbeat creates candidates for unknown devices, preserves trust for previously enrolled devices, and never grants trust by itself.
 
 After explicit lab enrollment, Fleet Host uses:
 

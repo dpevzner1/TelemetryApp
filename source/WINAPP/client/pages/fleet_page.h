@@ -1,5 +1,6 @@
 #pragma once
 #include "../renderer/d2d_context.h"
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -10,10 +11,16 @@ struct FleetDeviceRow {
     std::string name;
     std::string role;
     std::string address;
+    std::string hostname;
     std::string os;
     std::string state;
+    std::string device_id;
     std::string sensor_hash;
     std::string mac_hash;
+    std::string last_seen_address;
+    int64_t last_seen_at_ms = 0;
+    std::vector<std::string> address_history;
+    std::string enrollment_state;
     std::string last_error;
     bool trusted = false;
     bool local = false;

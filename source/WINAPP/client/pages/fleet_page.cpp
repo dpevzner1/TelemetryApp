@@ -92,6 +92,69 @@ static std::string LocalComputerNameA() {
     return "TelemetryApp Fleet Host";
 }
 
+static int64_t NowMs() {
+    FILETIME ft{};
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
+    return static_cast<int64_t>((u.QuadPart - 116444736000000000ULL) / 10000ULL);
+}
+
+static std::string PreferredFleetHostUrl() {
+    WSADATA wsa{};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return "http://localhost:8765";
+    std::string out = "http://localhost:8765";
+    char hostname[256]{};
+    if (gethostname(hostname, sizeof(hostname)) == 0) {
+        addrinfo hints{};
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        addrinfo* result = nullptr;
+        if (getaddrinfo(hostname, nullptr, &hints, &result) == 0) {
+            for (addrinfo* it = result; it; it = it->ai_next) {
+                auto* sa = reinterpret_cast<sockaddr_in*>(it->ai_addr);
+                if (!sa) continue;
+                unsigned char* b = reinterpret_cast<unsigned char*>(&sa->sin_addr.S_un.S_addr);
+                if (b[0] == 127 || b[0] == 169) continue;
+                char buf[64]{};
+                snprintf(buf, sizeof(buf), "http://%u.%u.%u.%u:8765", b[0], b[1], b[2], b[3]);
+                out = buf;
+                break;
+            }
+            freeaddrinfo(result);
+        }
+    }
+    WSACleanup();
+    return out;
+}
+
+static void AddUniqueAddress(std::vector<std::string>& history, const std::string& address) {
+    if (address.empty()) return;
+    if (std::find(history.begin(), history.end(), address) == history.end()) history.push_back(address);
+    while (history.size() > 12) history.erase(history.begin());
+}
+
+static bool SameDeviceIdentity(const FleetDeviceRow& a, const FleetDeviceRow& b) {
+    return (!a.device_id.empty() && a.device_id == b.device_id) ||
+           (!a.mac_hash.empty() && a.mac_hash == b.mac_hash) ||
+           (!a.sensor_hash.empty() && a.sensor_hash == b.sensor_hash) ||
+           (!a.address.empty() && a.address == b.address);
+}
+
+static void MergeDeviceRecord(FleetDeviceRow& existing, FleetDeviceRow incoming) {
+    const bool trusted = existing.trusted;
+    const bool local = existing.local;
+    AddUniqueAddress(existing.address_history, existing.address);
+    AddUniqueAddress(existing.address_history, incoming.address);
+    incoming.address_history = existing.address_history;
+    incoming.trusted = trusted;
+    incoming.local = local;
+    if (incoming.device_id.empty()) incoming.device_id = existing.device_id;
+    if (incoming.hostname.empty()) incoming.hostname = existing.hostname;
+    if (incoming.last_seen_address.empty()) incoming.last_seen_address = incoming.address;
+    if (incoming.last_seen_at_ms <= 0) incoming.last_seen_at_ms = NowMs();
+    existing = std::move(incoming);
+}
+
 struct ManualAddState {
     HWND owner = nullptr;
     HWND hwnd = nullptr;
@@ -311,16 +374,23 @@ static bool ProbeReadiness(const std::string& address, FleetDeviceRow& row, std:
     }
 
     std::string sensor_hash = j.value("sensor_id_hash", "");
+    std::string device_id = j.value("device_id", sensor_hash);
     std::string hostname = j.value("hostname", "");
     std::string mac_hash = j.value("mac_hash", "");
     std::string mode = j.value("install_mode", "SensorClient");
     row.name = hostname.empty() ? (sensor_hash.empty() ? host : ("Sensor " + sensor_hash)) : hostname;
     row.role = mode;
     row.address = host + ":" + std::to_string(port);
+    row.hostname = hostname;
     row.os = "Windows";
     row.state = "Online";
+    row.device_id = device_id;
     row.sensor_hash = sensor_hash;
     row.mac_hash = mac_hash;
+    row.last_seen_address = row.address;
+    row.last_seen_at_ms = NowMs();
+    AddUniqueAddress(row.address_history, row.address);
+    row.enrollment_state = j.value("enrollment_state", "");
     row.last_error.clear();
     row.trusted = false;
     row.local = false;
@@ -352,7 +422,7 @@ static bool PostLabEnrollment(const FleetDeviceRow& row, FleetDeviceRow& enrolle
     body["mac_hash"] = row.mac_hash;
     body["host_name"] = LocalComputerNameA();
     body["host_instance"] = "fleet-host-" + LocalComputerNameA();
-    body["host_address"] = "manual-or-lan-discovery";
+    body["host_address"] = PreferredFleetHostUrl();
 
     auto res = cli.Post("/api/v1/enrollment/request", body.dump(), "application/json");
     if (!res) {
@@ -370,10 +440,15 @@ static bool PostLabEnrollment(const FleetDeviceRow& row, FleetDeviceRow& enrolle
     enrolled = row;
     enrolled.name = response.value("hostname", enrolled.name);
     enrolled.role = response.value("install_mode", enrolled.role);
+    enrolled.device_id = response.value("device_id", enrolled.device_id);
     enrolled.sensor_hash = response.value("sensor_id_hash", enrolled.sensor_hash);
     enrolled.mac_hash = response.value("mac_hash", enrolled.mac_hash);
+    enrolled.enrollment_state = response.value("enrollment_state", "enrolled_lab");
     enrolled.state = "Online";
     enrolled.trusted = true;
+    enrolled.last_seen_address = enrolled.address;
+    enrolled.last_seen_at_ms = NowMs();
+    AddUniqueAddress(enrolled.address_history, enrolled.address);
     enrolled.last_error.clear();
     return true;
 }
@@ -665,18 +740,18 @@ void FleetPage::SetStoragePath(const std::string& path) {
 
 void FleetPage::SetLocalHost(const std::string& hostname) {
     m_devices.clear();
-    m_devices.push_back({
-        hostname.empty() ? "Local Device" : hostname,
-        "FullHost",
-        "localhost:8765",
-        "Windows",
-        "Online",
-        "",
-        "",
-        "",
-        true,
-        true
-    });
+    FleetDeviceRow local;
+    local.name = hostname.empty() ? "Local Device" : hostname;
+    local.role = "FullHost";
+    local.address = "localhost:8765";
+    local.hostname = local.name;
+    local.os = "Windows";
+    local.state = "Online";
+    local.last_seen_address = local.address;
+    local.last_seen_at_ms = NowMs();
+    local.trusted = true;
+    local.local = true;
+    m_devices.push_back(local);
 }
 
 void FleetPage::DrawButton(float x, float y, float w, float h, const wchar_t* label,
@@ -1255,7 +1330,8 @@ void FleetPage::EnrollDevice(size_t index) {
         return;
     }
 
-    m_devices[index] = enrolled;
+    MergeDeviceRecord(m_devices[index], enrolled);
+    m_devices[index].trusted = true;
     m_discovery_status = "Enrolled " + enrolled.name + " at " + enrolled.address +
         " as a trusted lab device. MAC hash is used as the primary duplicate key.";
     SaveDevices();
@@ -1270,10 +1346,11 @@ void FleetPage::RefreshDevice(size_t index) {
     }
     std::string error;
     std::string address = m_devices[index].address;
+    FleetDeviceRow before = m_devices[index];
     bool was_trusted = m_devices[index].trusted;
     if (AddOrUpdateRemoteCandidate(address, error, 1500, 3000)) {
         for (auto& d : m_devices) {
-            if (d.address == address) d.trusted = was_trusted;
+            if (SameDeviceIdentity(d, before)) d.trusted = d.trusted || was_trusted;
         }
         m_discovery_status = "Refreshed " + address + ". Device is online; enrollment status is unchanged.";
         SaveDevices();
@@ -1345,11 +1422,8 @@ bool FleetPage::AddOrUpdateRemoteCandidate(const std::string& address, std::stri
     if (!ProbeReadiness(address, row, error, connect_timeout_ms, read_timeout_ms, connect_timeout_ms)) return false;
 
     for (auto& existing : m_devices) {
-        if ((!row.mac_hash.empty() && existing.mac_hash == row.mac_hash) ||
-            (!row.sensor_hash.empty() && existing.sensor_hash == row.sensor_hash) ||
-            existing.address == row.address) {
-            row.trusted = existing.trusted;
-            existing = row;
+        if (SameDeviceIdentity(existing, row)) {
+            MergeDeviceRecord(existing, row);
             SaveDevices();
             if (m_on_devices_changed) m_on_devices_changed();
             return true;
@@ -1508,20 +1582,30 @@ void FleetPage::LoadDevices() {
             row.name = j.value("name", "");
             row.role = j.value("role", "SensorClient");
             row.address = j.value("address", "");
+            row.hostname = j.value("hostname", row.name);
             row.os = j.value("os", "Windows");
-            row.state = "Offline";
+            row.state = j.value("state", "Offline");
+            row.device_id = j.value("device_id", "");
             row.sensor_hash = j.value("sensor_hash", "");
             row.mac_hash = j.value("mac_hash", "");
+            row.last_seen_address = j.value("last_seen_address", row.address);
+            row.last_seen_at_ms = j.value("last_seen_at_ms", (int64_t)0);
+            row.enrollment_state = j.value("enrollment_state", "");
             row.last_error = j.value("last_error", "");
             row.trusted = j.value("trusted", false);
             row.local = false;
+            if (j.contains("address_history") && j["address_history"].is_array()) {
+                for (const auto& v : j["address_history"]) {
+                    if (v.is_string()) AddUniqueAddress(row.address_history, v.get<std::string>());
+                }
+            }
+            AddUniqueAddress(row.address_history, row.address);
             if (row.address.empty()) continue;
 
             bool duplicate = false;
-            for (const auto& existing : m_devices) {
-                if ((!row.mac_hash.empty() && existing.mac_hash == row.mac_hash) ||
-                    (!row.sensor_hash.empty() && existing.sensor_hash == row.sensor_hash) ||
-                    existing.address == row.address) {
+            for (auto& existing : m_devices) {
+                if (SameDeviceIdentity(existing, row)) {
+                    if (!existing.local) MergeDeviceRecord(existing, row);
                     duplicate = true;
                     break;
                 }
@@ -1539,8 +1623,8 @@ void FleetPage::LoadDevices() {
 void FleetPage::SaveDevices() const {
     if (m_devices_path.empty()) return;
     json root;
-    root["schema"] = 1;
-    root["truth_model"] = "explicit lab enrollment persists host-side trust; mac_hash is the primary duplicate key";
+    root["schema"] = 2;
+    root["truth_model"] = "explicit lab enrollment persists host-side trust; device_id/sensor_hash and mac_hash reconcile IP churn";
     root["devices"] = json::array();
     for (const auto& row : m_devices) {
         if (row.local) continue;
@@ -1548,10 +1632,16 @@ void FleetPage::SaveDevices() const {
             {"name", row.name},
             {"role", row.role},
             {"address", row.address},
+            {"hostname", row.hostname},
             {"os", row.os},
             {"state", row.state},
+            {"device_id", row.device_id},
             {"sensor_hash", row.sensor_hash},
             {"mac_hash", row.mac_hash},
+            {"last_seen_address", row.last_seen_address},
+            {"last_seen_at_ms", row.last_seen_at_ms},
+            {"address_history", row.address_history},
+            {"enrollment_state", row.enrollment_state},
             {"last_error", row.last_error},
             {"trusted", row.trusted}
         });

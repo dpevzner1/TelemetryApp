@@ -264,7 +264,7 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "```\n" << service_url << "\n```\n\n";
 
     f << "## Authentication\n\n";
-    f << "All endpoints except `/metrics` and `/api/v1/health` require the following header:\n\n";
+    f << "All endpoints except `/metrics`, `/api/v1/health`, `/api/v1/enrollment/readiness`, `/api/v1/enrollment/request`, and Fleet Manager heartbeat intake `/api/v1/fleet/heartbeat` require the following header:\n\n";
     f << "```\nX-API-Key: <your-api-key>\n```\n\n";
     f << "API keys are managed via the **TelemetryApp GUI → API** panel,  \n";
     f << "or via `POST /api/v1/keys` with an existing admin key.\n\n";
@@ -283,7 +283,7 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "5. Run the workload.\n";
     f << "6. Call `POST /api/v1/sessions/<id>/stop` and read the returned `log_path`.\n\n";
     f << "Session logs are JSONL files named `sess-<id>.jsonl`; metadata is stored as `sess-<id>.meta.json`. If `log_dir` is omitted, files go to `%TELEMETRY_DATA_DIR%\\logs\\sessions\\`. If `log_dir` is supplied, it must be an absolute Windows path and the service account must have write access.\n\n";
-    f << "Current remote fleet truth: local sessions are live; remote fleet logging policies are queued until secure enrollment, TLS/mTLS, host-to-sensor dispatch, and sensor acknowledgement are implemented. Sensor-client installs cannot discover, poll, or manage other devices.\n\n";
+    f << "Current remote fleet truth: local sessions are live; discovered sensors can be explicitly enrolled for lab snapshot/logging workflows; heartbeat/call-home updates changed sensor IP addresses by stable identity. Sensor-client installs cannot discover, poll, or manage other devices.\n\n";
 
     f << "---\n\n";
     f << "## Endpoints\n\n";
@@ -298,7 +298,11 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "| GET | `/api/v1/metrics/catalog` | Required | Stable metric IDs and common metric names |\n";
     f << "| GET | `/api/v1/diagnostics` | Required | Service diagnostics and runtime counters |\n";
     f << "| GET | `/api/v1/enrollment/readiness` | None | Non-secret sensor readiness metadata for manual add/candidate discovery |\n";
-    f << "| POST | `/api/v1/enrollment/request` | Required | Enrollment request contract; does not grant trust until token/cert flow is implemented |\n";
+    f << "| POST | `/api/v1/enrollment/request` | None | Explicit lab enrollment request; validates public sensor fingerprint and records sensor acknowledgement |\n";
+    f << "| POST | `/api/v1/fleet/heartbeat` | None, Fleet Manager only | Sensor call-home inventory update; reconciles IP changes by device/sensor/MAC hash and never auto-trusts |\n";
+    f << "| GET | `/api/v1/lab/snapshot` | None after enrollment | Lab-enrolled remote snapshot for Fleet View |\n";
+    f << "| POST | `/api/v1/lab/sessions` | None after enrollment | Lab-enrolled remote logging session start |\n";
+    f << "| POST | `/api/v1/lab/sessions/<id>/stop` | None after enrollment | Lab-enrolled remote logging session stop |\n";
     f << "| GET | `/api/v1/install/audit` | Required | Local install mode, sensor identity, registry/config audit metadata |\n";
     f << "| GET | `/api/v1/keys` | Required | List all API keys (prefixes only) |\n";
     f << "| POST | `/api/v1/keys` | Required | Create a new API key |\n";
@@ -339,7 +343,9 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
 
     f << "## Enterprise Sensor Enrollment Contract\n\n";
     f << "`GET /api/v1/enrollment/readiness` is intentionally public and returns only non-secret candidate metadata: product, hostname, install mode, sensor ID hash, MAC hash, host URL configured state, and remote TLS requirement. Discovery is not trust. Raw MAC addresses are reserved for trusted/enrolled inventory APIs because they are stable hardware identifiers.\n\n";
-    f << "`POST /api/v1/enrollment/request` currently records the contract shape and returns `202` with `accepted:false`. A future release must add one-time token validation, TLS/mTLS, certificate/thumbprint pinning, and token invalidation before accepting remote telemetry.\n\n";
+    f << "`POST /api/v1/enrollment/request` accepts explicit lab enrollment when `accept_lab_enrollment:true` and the submitted `sensor_id_hash` matches the readiness fingerprint. If a `mac_hash` is supplied, it must also match. Accepted enrollment records `enrolled_lab` and stores the Fleet Host URL for later sensor call-home.\n\n";
+    f << "`POST /api/v1/fleet/heartbeat` is accepted only by a Fleet Manager install. A sensor with configured `host_url` posts public identity metadata (`device_id`, `sensor_id_hash`, `mac_hash`, `hostname`, `install_mode`, `enrollment_state`, `api_port`). The Fleet Manager derives the current `ip:port` from the TCP peer address plus `api_port`, merges by stable identity, updates `last_seen_address`, `last_seen_at_ms`, and `address_history`, and never grants trust by heartbeat alone.\n\n";
+    f << "Fleet heartbeat is a lab inventory continuity feature, not enterprise cryptographic trust. A future release must add one-time token validation, TLS/mTLS, certificate/thumbprint pinning, and token invalidation before accepting remote telemetry as enterprise-grade.\n\n";
     f << "`GET /api/v1/install/audit` requires API auth and returns local install mode, full sensor ID, data path, and the secrets policy. Enrollment tokens and API secrets must not be persisted in registry, environment variables, or diagnostic logs.\n\n";
 
     f << "Example session start with a custom log folder:\n\n";
