@@ -86,7 +86,10 @@ private:
     std::vector<float>       m_values;   // parallel to m_metrics
 
     RECT m_bar_rect{};  // screen coordinates of the bar window
+    RECT m_last_appbar_rect{};
     bool m_appbar_registered = false;
+    bool m_appbar_applying = false;
+    bool m_appbar_reposition_pending = false;
     bool m_fleet_menu_visible = false;
     bool m_recording_active = false;
     std::vector<TrayDeviceOption> m_fleet_devices;
@@ -105,7 +108,7 @@ private:
     void DrawTooltip();
     int HitTestMetric(int x, int y) const;
 
-    static void GetWorkAreaAndTaskbar(RECT& work_area, RECT& taskbar);
+    static void GetScreenAndTaskbar(RECT& screen, RECT& taskbar);
 };
 
 // Default HUD metric set (Core + Thermal + I/O)

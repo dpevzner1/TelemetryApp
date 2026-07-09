@@ -171,6 +171,7 @@ Dashboard:
 - `Dashboard -> Edit Dashboard` opens the visual layout editor.
 - The editor can hide/show panels, change visualization type, adjust tile size, save/close, cancel, or save the layout as the default preferred config.
 - Hidden dashboard panels collapse and remaining visible tiles align left.
+- HUD/bar minimize mode uses Windows appbar reservation with stable, idempotent edge geometry. The HUD must not compute its next position from a work area already modified by its own reservation, and appbar callbacks are coalesced to avoid Explorer reflow loops.
 
 Metrics:
 - `Metrics -> Logging On/Off` prompts for a log output folder before starting capture.

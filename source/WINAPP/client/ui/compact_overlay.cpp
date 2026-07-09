@@ -68,6 +68,14 @@ HMENU BuildHudContextMenu(HudPosition position, bool fleet_visible,
     return menu;
 }
 
+static constexpr UINT WM_APPBAR_CALLBACK = WM_APP + 42;
+static constexpr UINT WM_APPBAR_REPOSITION = WM_APP + 43;
+
+bool SameRect(const RECT& a, const RECT& b) {
+    return a.left == b.left && a.top == b.top &&
+           a.right == b.right && a.bottom == b.bottom;
+}
+
 }
 
 // ── Default metrics (Core + Thermal + I/O) ────────────────────────────────────
@@ -92,33 +100,41 @@ std::vector<HudMetric> MakeDefaultHudMetrics() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-void CompactOverlay::GetWorkAreaAndTaskbar(RECT& work_area, RECT& taskbar) {
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work_area, 0);
-    // Taskbar occupies the gap between screen and work area (assumes taskbar at bottom)
-    taskbar.left   = 0;
-    taskbar.top    = work_area.bottom;
-    taskbar.right  = GetSystemMetrics(SM_CXSCREEN);
-    taskbar.bottom = GetSystemMetrics(SM_CYSCREEN);
+void CompactOverlay::GetScreenAndTaskbar(RECT& screen, RECT& taskbar) {
+    screen.left = 0;
+    screen.top = 0;
+    screen.right = GetSystemMetrics(SM_CXSCREEN);
+    screen.bottom = GetSystemMetrics(SM_CYSCREEN);
+    taskbar = RECT{};
+    APPBARDATA abd{};
+    abd.cbSize = sizeof(abd);
+    if (SHAppBarMessage(ABM_GETTASKBARPOS, &abd)) {
+        taskbar = abd.rc;
+    }
 }
 
 void CompactOverlay::ComputeBarRect() {
-    RECT wa{}, tb{};
-    GetWorkAreaAndTaskbar(wa, tb);
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
+    RECT screen{}, taskbar{};
+    GetScreenAndTaskbar(screen, taskbar);
+    const int sw = screen.right - screen.left;
+    int bottom = screen.bottom;
+    if (taskbar.bottom == screen.bottom && taskbar.top > screen.top &&
+        (taskbar.right - taskbar.left) >= sw / 2) {
+        bottom = taskbar.top;
+    }
 
     switch (m_position) {
     case HudPosition::AboveTaskbar:
-        m_bar_rect = {0, wa.bottom - HUD_THICKNESS, sw, wa.bottom};
+        m_bar_rect = {screen.left, bottom - HUD_THICKNESS, screen.right, bottom};
         break;
     case HudPosition::Top:
-        m_bar_rect = {0, 0, sw, HUD_THICKNESS};
+        m_bar_rect = {screen.left, screen.top, screen.right, screen.top + HUD_THICKNESS};
         break;
     case HudPosition::Left:
-        m_bar_rect = {0, 0, HUD_THICKNESS, sh};
+        m_bar_rect = {screen.left, screen.top, screen.left + HUD_THICKNESS, screen.bottom};
         break;
     case HudPosition::Right:
-        m_bar_rect = {sw - HUD_THICKNESS, 0, sw, sh};
+        m_bar_rect = {screen.right - HUD_THICKNESS, screen.top, screen.right, screen.bottom};
         break;
     }
 }
@@ -129,7 +145,7 @@ void CompactOverlay::RegisterAppBar() {
     APPBARDATA abd{};
     abd.cbSize = sizeof(abd);
     abd.hWnd = m_hwnd;
-    abd.uCallbackMessage = WM_APP + 42;
+    abd.uCallbackMessage = WM_APPBAR_CALLBACK;
     if (SHAppBarMessage(ABM_NEW, &abd)) {
         m_appbar_registered = true;
     }
@@ -143,10 +159,14 @@ void CompactOverlay::UnregisterAppBar() {
     abd.hWnd = m_hwnd;
     SHAppBarMessage(ABM_REMOVE, &abd);
     m_appbar_registered = false;
+    m_appbar_reposition_pending = false;
+    m_last_appbar_rect = RECT{};
 }
 
 void CompactOverlay::ApplyAppBarPosition() {
     if (!m_hwnd) return;
+    if (m_appbar_applying) return;
+    m_appbar_applying = true;
     RegisterAppBar();
     ComputeBarRect();
 
@@ -175,6 +195,17 @@ void CompactOverlay::ApplyAppBarPosition() {
         break;
     }
 
+    if (!m_appbar_registered) {
+        SetWindowPos(m_hwnd, HWND_TOPMOST,
+            m_bar_rect.left, m_bar_rect.top,
+            m_bar_rect.right - m_bar_rect.left,
+            m_bar_rect.bottom - m_bar_rect.top,
+            SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        m_last_appbar_rect = m_bar_rect;
+        m_appbar_applying = false;
+        return;
+    }
+
     SHAppBarMessage(ABM_QUERYPOS, &abd);
     switch (m_position) {
     case HudPosition::Top:
@@ -191,8 +222,12 @@ void CompactOverlay::ApplyAppBarPosition() {
         abd.rc.top = abd.rc.bottom - HUD_THICKNESS;
         break;
     }
-    SHAppBarMessage(ABM_SETPOS, &abd);
-    m_bar_rect = abd.rc;
+    if (!SameRect(abd.rc, m_last_appbar_rect)) {
+        SHAppBarMessage(ABM_SETPOS, &abd);
+        m_last_appbar_rect = abd.rc;
+    }
+    m_bar_rect = m_last_appbar_rect;
+    m_appbar_applying = false;
 }
 
 // ── Window class + Create ─────────────────────────────────────────────────────
@@ -282,7 +317,7 @@ void CompactOverlay::Show() {
         m_bar_rect.left, m_bar_rect.top,
         m_bar_rect.right - m_bar_rect.left,
         m_bar_rect.bottom - m_bar_rect.top,
-        SWP_SHOWWINDOW | SWP_NOACTIVATE);
+        SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     Render();
 }
 
@@ -298,6 +333,7 @@ bool CompactOverlay::IsVisible() const {
 }
 
 void CompactOverlay::SetPosition(HudPosition pos) {
+    if (m_position == pos && IsVisible()) return;
     m_position = pos;
     if (IsVisible()) {
         UnregisterAppBar();
@@ -531,14 +567,22 @@ LRESULT CALLBACK CompactOverlay::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     }
 
     switch (msg) {
-    case WM_APP + 42:
+    case WM_APPBAR_CALLBACK:
+        if (self && self->IsVisible() && !self->m_appbar_reposition_pending) {
+            self->m_appbar_reposition_pending = true;
+            PostMessageW(hwnd, WM_APPBAR_REPOSITION, 0, 0);
+        }
+        return 0;
+
+    case WM_APPBAR_REPOSITION:
         if (self && self->IsVisible()) {
+            self->m_appbar_reposition_pending = false;
             self->ApplyAppBarPosition();
             SetWindowPos(self->m_hwnd, HWND_TOPMOST,
                 self->m_bar_rect.left, self->m_bar_rect.top,
                 self->m_bar_rect.right - self->m_bar_rect.left,
                 self->m_bar_rect.bottom - self->m_bar_rect.top,
-                SWP_NOACTIVATE);
+                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             self->Render();
         }
         return 0;
