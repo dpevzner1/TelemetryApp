@@ -466,14 +466,58 @@ Section "TelemetryApp (required)" SEC_MAIN
     ; Stop running components before overwriting executables. This must be
     ; deterministic: disable service start/recovery during replacement, wait for
     ; STOPPED, force-kill remaining processes, then verify files are writable.
+    ; Keep this in a temp script instead of a single inline PowerShell command:
+    ; long one-liners are brittle in NSIS quoting and can fail before any useful
+    ; stop/unlock action occurs.
     DetailPrint "Stopping TelemetryApp service and processes before installation..."
-    ExecWait `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='SilentlyContinue'; $$names=@('telemetry_service','telemetry_client','TelemetryApp'); sc.exe config TelemetryService start= disabled | Out-Null; sc.exe failureflag TelemetryService 0 | Out-Null; Stop-Service -Name TelemetryService -Force -ErrorAction SilentlyContinue; $$deadline=(Get-Date).AddSeconds(45); do { Start-Sleep -Milliseconds 500; $$svc=Get-Service -Name TelemetryService -ErrorAction SilentlyContinue } while($$svc -and $$svc.Status -ne 'Stopped' -and (Get-Date) -lt $$deadline); Get-Process -Name $$names -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; $$deadline=(Get-Date).AddSeconds(30); do { Start-Sleep -Milliseconds 500; $$left=Get-Process -Name $$names -ErrorAction SilentlyContinue } while($$left -and (Get-Date) -lt $$deadline); if($$left){ $$left | ForEach-Object { Write-Host ('Still running: ' + $$_.ProcessName + ' PID=' + $$_.Id) }; exit 55 }; $$paths=@('$INSTDIR\${LAUNCHER_EXE}','$INSTDIR\${SERVICE_EXE}','$INSTDIR\${PRODUCT_EXE}'); foreach($$p in $$paths){ if(Test-Path -LiteralPath $$p){ try { $$fs=[System.IO.File]::Open($$p,'Open','ReadWrite','None'); $$fs.Close() } catch { Write-Host ('Locked file: ' + $$p); exit 56 } } }; exit 0"` $0
+    StrCpy $1 "$TEMP\TelemetryApp_install_preflight.ps1"
+    StrCpy $2 "$TEMP\TelemetryApp_install_preflight.log"
+    Delete "$1"
+    Delete "$2"
+    FileOpen $3 "$1" w
+    FileWrite $3 "$$ErrorActionPreference = 'Continue'$\r$\n"
+    FileWrite $3 "$$logPath = '$2'$\r$\n"
+    FileWrite $3 "function Log([string]$$m) { ('{0:u} {1}' -f (Get-Date), $$m) | Out-File -FilePath $$logPath -Append -Encoding UTF8 }$\r$\n"
+    FileWrite $3 "try {$\r$\n"
+    FileWrite $3 "  Log 'TelemetryApp install preflight starting.'$\r$\n"
+    FileWrite $3 "  $$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)$\r$\n"
+    FileWrite $3 "  if (-not $$isAdmin) { Log 'Installer is not elevated.'; exit 51 }$\r$\n"
+    FileWrite $3 "  $$names = @('telemetry_service','telemetry_client','TelemetryApp')$\r$\n"
+    FileWrite $3 "  Log 'Disabling service startup and recovery during replacement.'$\r$\n"
+    FileWrite $3 "  & sc.exe config TelemetryService start= disabled | Out-Null$\r$\n"
+    FileWrite $3 "  & sc.exe failureflag TelemetryService 0 | Out-Null$\r$\n"
+    FileWrite $3 "  Log 'Requesting service stop.'$\r$\n"
+    FileWrite $3 "  & sc.exe stop TelemetryService | Out-Null$\r$\n"
+    FileWrite $3 "  Stop-Service -Name TelemetryService -Force -ErrorAction SilentlyContinue$\r$\n"
+    FileWrite $3 "  $$deadline = (Get-Date).AddSeconds(60)$\r$\n"
+    FileWrite $3 "  do { Start-Sleep -Milliseconds 500; $$svc = Get-Service -Name TelemetryService -ErrorAction SilentlyContinue } while ($$svc -and $$svc.Status -ne 'Stopped' -and (Get-Date) -lt $$deadline)$\r$\n"
+    FileWrite $3 "  if ($$svc -and $$svc.Status -ne 'Stopped') { Log ('Service did not stop. Status=' + $$svc.Status); exit 55 }$\r$\n"
+    FileWrite $3 "  Log 'Killing remaining TelemetryApp processes, if present.'$\r$\n"
+    FileWrite $3 "  foreach ($$image in @('telemetry_service.exe','telemetry_client.exe','TelemetryApp.exe')) { & taskkill.exe /F /T /IM $$image 2>&1 | ForEach-Object { Log ($$image + ': ' + $$_) } }$\r$\n"
+    FileWrite $3 "  Get-Process -Name $$names -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue$\r$\n"
+    FileWrite $3 "  $$deadline = (Get-Date).AddSeconds(45)$\r$\n"
+    FileWrite $3 "  do { Start-Sleep -Milliseconds 500; $$left = Get-Process -Name $$names -ErrorAction SilentlyContinue } while ($$left -and (Get-Date) -lt $$deadline)$\r$\n"
+    FileWrite $3 "  if ($$left) { $$left | ForEach-Object { Log ('Still running: ' + $$_.ProcessName + ' PID=' + $$_.Id) }; exit 55 }$\r$\n"
+    FileWrite $3 "  $$paths = @('$INSTDIR\${LAUNCHER_EXE}', '$INSTDIR\${SERVICE_EXE}', '$INSTDIR\${PRODUCT_EXE}')$\r$\n"
+    FileWrite $3 "  foreach ($$p in $$paths) {$\r$\n"
+    FileWrite $3 "    if (Test-Path -LiteralPath $$p) {$\r$\n"
+    FileWrite $3 "      try { $$fs = [System.IO.File]::Open($$p, 'Open', 'ReadWrite', 'None'); $$fs.Close(); Log ('Unlocked: ' + $$p) }$\r$\n"
+    FileWrite $3 "      catch { Log ('Locked file: ' + $$p + ' :: ' + $$_.Exception.Message); exit 56 }$\r$\n"
+    FileWrite $3 "    }$\r$\n"
+    FileWrite $3 "  }$\r$\n"
+    FileWrite $3 "  Log 'TelemetryApp install preflight succeeded.'$\r$\n"
+    FileWrite $3 "  exit 0$\r$\n"
+    FileWrite $3 "} catch { Log ('Preflight exception: ' + $$_.Exception.Message); exit 57 }$\r$\n"
+    FileClose $3
+    ExecWait 'powershell -NoProfile -ExecutionPolicy Bypass -File "$1"' $0
     ${If} $0 != 0
         WriteRegStr HKLM "${REG_APP_KEY}\InstallAudit" "LastActionResult" "BlockedBeforeFileReplace"
         WriteRegDWORD HKLM "${REG_APP_KEY}\InstallAudit" "LastStopPreflightExitCode" $0
-        MessageBox MB_ICONSTOP "TelemetryApp setup could not safely stop or unlock the existing TelemetryApp executables.$\r$\n$\r$\nExit code: $0$\r$\n$\r$\nClose TelemetryApp, stop TelemetryService from Services, then rerun setup as administrator. Setup will abort now rather than install mismatched files."
+        WriteRegStr HKLM "${REG_APP_KEY}\InstallAudit" "LastStopPreflightLog" "$2"
+        MessageBox MB_ICONSTOP "TelemetryApp setup could not safely stop or unlock the existing TelemetryApp executables.$\r$\n$\r$\nExit code: $0$\r$\nLog: $2$\r$\n$\r$\nClose TelemetryApp, stop TelemetryService from Services, then rerun setup as administrator. Setup will abort now rather than install mismatched files."
         Abort
     ${EndIf}
+    Delete "$1"
 
     ; ── Files ─────────────────────────────────────────────────────────────────
     SetOutPath "$INSTDIR"

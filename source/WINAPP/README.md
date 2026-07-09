@@ -95,6 +95,13 @@ WINAPP\dist\TelemetryApp_Portable\
 
 The installer writes `ReadmePath`, `ApiGuidePath`, and `ProjectMatrixPath` under `HKLM\SOFTWARE\TelemetryApp`, and sets `TELEMETRY_APP_DIR`, `TELEMETRY_API_URL`, `TELEMETRY_DATA_DIR`, `TELEMETRY_INSTALL_MODE`, `TELEMETRY_INSTALL_ROLE`, and `TELEMETRY_START_MODE`.
 
+Installer update/repair safety:
+
+- Setup requires elevation and stops `TelemetryService`, `telemetry_service.exe`, `telemetry_client.exe`, and `TelemetryApp.exe` before replacing files.
+- The stop/unlock preflight writes `%TEMP%\TelemetryApp_install_preflight.log` on the target device.
+- If setup aborts before extraction, inspect that log and `HKLM\SOFTWARE\TelemetryApp\InstallAudit`. Exit `51` means the installer was not elevated, `55` means a service/process remained running, `56` means an executable stayed file-locked, and `57` means an unexpected preflight exception occurred.
+- Setup intentionally aborts instead of installing mismatched files when an existing executable cannot be unlocked.
+
 ### First Verification
 
 1. Start the service from the installer, Windows Services, the app Settings page, or portable `run_service_console.bat`.
