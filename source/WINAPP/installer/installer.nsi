@@ -463,13 +463,17 @@ Section "TelemetryApp (required)" SEC_MAIN
     SetShellVarContext all
     SetRegView 64
 
-    ; Stop running components before overwriting executables.
-    DetailPrint "Stopping TelemetryApp processes before installation..."
-    ExecWait 'sc stop TelemetryService' $0
-    Sleep 2500
-    ExecWait 'taskkill /F /T /IM telemetry_service.exe' $0
-    ExecWait 'taskkill /F /T /IM telemetry_client.exe' $0
-    ExecWait 'taskkill /F /T /IM TelemetryApp.exe' $0
+    ; Stop running components before overwriting executables. This must be
+    ; deterministic: disable service start/recovery during replacement, wait for
+    ; STOPPED, force-kill remaining processes, then verify files are writable.
+    DetailPrint "Stopping TelemetryApp service and processes before installation..."
+    ExecWait `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='SilentlyContinue'; $$names=@('telemetry_service','telemetry_client','TelemetryApp'); sc.exe config TelemetryService start= disabled | Out-Null; sc.exe failureflag TelemetryService 0 | Out-Null; Stop-Service -Name TelemetryService -Force -ErrorAction SilentlyContinue; $$deadline=(Get-Date).AddSeconds(45); do { Start-Sleep -Milliseconds 500; $$svc=Get-Service -Name TelemetryService -ErrorAction SilentlyContinue } while($$svc -and $$svc.Status -ne 'Stopped' -and (Get-Date) -lt $$deadline); Get-Process -Name $$names -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; $$deadline=(Get-Date).AddSeconds(30); do { Start-Sleep -Milliseconds 500; $$left=Get-Process -Name $$names -ErrorAction SilentlyContinue } while($$left -and (Get-Date) -lt $$deadline); if($$left){ $$left | ForEach-Object { Write-Host ('Still running: ' + $$_.ProcessName + ' PID=' + $$_.Id) }; exit 55 }; $$paths=@('$INSTDIR\${LAUNCHER_EXE}','$INSTDIR\${SERVICE_EXE}','$INSTDIR\${PRODUCT_EXE}'); foreach($$p in $$paths){ if(Test-Path -LiteralPath $$p){ try { $$fs=[System.IO.File]::Open($$p,'Open','ReadWrite','None'); $$fs.Close() } catch { Write-Host ('Locked file: ' + $$p); exit 56 } } }; exit 0"` $0
+    ${If} $0 != 0
+        WriteRegStr HKLM "${REG_APP_KEY}\InstallAudit" "LastActionResult" "BlockedBeforeFileReplace"
+        WriteRegDWORD HKLM "${REG_APP_KEY}\InstallAudit" "LastStopPreflightExitCode" $0
+        MessageBox MB_ICONSTOP "TelemetryApp setup could not safely stop or unlock the existing TelemetryApp executables.$\r$\n$\r$\nExit code: $0$\r$\n$\r$\nClose TelemetryApp, stop TelemetryService from Services, then rerun setup as administrator. Setup will abort now rather than install mismatched files."
+        Abort
+    ${EndIf}
 
     ; ── Files ─────────────────────────────────────────────────────────────────
     SetOutPath "$INSTDIR"
