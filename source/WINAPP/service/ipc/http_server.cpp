@@ -18,6 +18,7 @@
 #include "../api_key_store.h"
 #include "../log_session.h"
 #include "../enterprise_config.h"
+#include "../hardware_registry.h"
 #include "../process_watcher/watcher.h"
 #include "../../shared/shm_layout.h"
 #include "../../shared/metric_ids.h"
@@ -769,6 +770,11 @@ bool HttpServerInit() {
         };
         j["auth"] = {"X-API-Key", "Authorization: Bearer", "api_key query parameter"};
         res.set_content(j.dump(), "application/json");
+    });
+
+    s_svr->Get("/api/v1/hardware", [](const httplib::Request& req, httplib::Response& res) {
+        if (!CheckAuth(req, res)) return;
+        res.set_content(BuildHardwareInventoryJson(ShmGet()).dump(), "application/json");
     });
 
     s_svr->Get("/api/v1/metrics/catalog", [](const httplib::Request& req, httplib::Response& res) {

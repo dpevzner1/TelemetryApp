@@ -35,11 +35,12 @@ Authentication accepts any of these forms. Prefer headers for automation:
 A script or another AI tool can use TelemetryApp immediately with this sequence:
 
 1. Call `GET /api/v1/health` to confirm the service is reachable.
-2. Call `GET /api/v1/metrics/catalog` to map stable metric IDs.
-3. Optionally call `POST /api/v1/watch` to add a process by `pid` or `exe_name`.
-4. Call `POST /api/v1/sessions` with `label`, optional absolute `log_dir`, and optional `metric_ids`.
-5. Run the workload.
-6. Call `POST /api/v1/sessions/<id>/stop` and read the returned `log_path`.
+2. Call `GET /api/v1/hardware` to identify CPU/GPU make, model, topology, and supported capability quality.
+3. Call `GET /api/v1/metrics/catalog` to map stable metric IDs.
+4. Optionally call `POST /api/v1/watch` to add a process by `pid` or `exe_name`.
+5. Call `POST /api/v1/sessions` with `label`, optional absolute `log_dir`, and optional `metric_ids`.
+6. Run the workload.
+7. Call `POST /api/v1/sessions/<id>/stop` and read the returned `log_path`.
 
 Session logs are JSONL files named `sess-<id>.jsonl`; metadata is stored as `sess-<id>.meta.json`. If `log_dir` is omitted, files go to `%TELEMETRY_DATA_DIR%\logs\sessions\`. If `log_dir` is supplied, it must be an absolute Windows path and the service account must have write access.
 
@@ -57,6 +58,7 @@ Current remote fleet truth: local sessions are live; discovered sensors can be c
 | GET | `/api/v1/health` | None | Service liveness + poll duration |
 | GET | `/metrics` | None | Prometheus text exposition format |
 | GET | `/api/v1/capabilities` | Required | Service, device, and accelerator capabilities |
+| GET | `/api/v1/hardware` | Required | Hardware identity registry: CPU/GPU make, model, topology, provider preference, and per-device capability status |
 | GET | `/api/v1/metrics/catalog` | Required | Stable metric IDs and common metric names |
 | GET | `/api/v1/diagnostics` | Required | Service diagnostics and runtime counters |
 | GET | `/api/v1/enrollment/readiness` | None | Non-secret sensor readiness metadata for manual add/candidate discovery |
@@ -93,6 +95,8 @@ Current remote fleet truth: local sessions are live; discovered sensors can be c
 | `tensor_core_gen` | Inferred tensor-core generation from CUDA compute capability |
 
 `GET /api/v1/capabilities` returns an `accelerators[]` array containing adapter name, tensor-core inference, CUDA compute capability, tensor-core generation, and the metric IDs for SM and memory-bandwidth utilization.
+
+`GET /api/v1/hardware` is the richer hardware identity registry. It reports CPU vendor/model/family/stepping, logical and physical topology where Windows exposes it, cache topology, CPU instruction sets, DXGI GPU vendor/device IDs, adapter memory, current provider preference, and per-device capability objects. Capability objects distinguish `measured`, `derived`, `inferred`, `unavailable`, `unsupported`, and `not_implemented`; unsupported values must not be interpreted as zero.
 
 ## Power / Electrical Telemetry
 
@@ -176,6 +180,9 @@ curl -H "X-API-Key: <key>" http://localhost:8765/api/v1/snapshot
 
 # Device and accelerator capabilities
 curl -H "X-API-Key: <key>" http://localhost:8765/api/v1/capabilities
+
+# Hardware make/model/topology/capability registry
+curl -H "X-API-Key: <key>" http://localhost:8765/api/v1/hardware
 
 # Stable metric catalog
 curl -H "X-API-Key: <key>" http://localhost:8765/api/v1/metrics/catalog

@@ -115,6 +115,7 @@ $base = "http://localhost:8765"
 $key = "<tlm-api-key>"
 Invoke-RestMethod "$base/api/v1/health"
 Invoke-RestMethod "$base/api/v1/snapshot" -Headers @{ "X-API-Key" = $key }
+Invoke-RestMethod "$base/api/v1/hardware" -Headers @{ "X-API-Key" = $key }
 Invoke-RestMethod "$base/api/v1/metrics/catalog" -Headers @{ "X-API-Key" = $key }
 ```
 
@@ -223,6 +224,7 @@ Core endpoints:
 - `GET /api/v1/snapshot` - current full telemetry snapshot.
 - `GET /api/v1/metrics/catalog` - stable metric IDs and names.
 - `GET /api/v1/capabilities` - device and accelerator capabilities.
+- `GET /api/v1/hardware` - hardware identity registry for CPU/GPU make, model, topology, provider preference, and capability status.
 - `GET /api/v1/diagnostics` - service counters and diagnostics.
 - `GET /api/v1/stream` - server-sent events at roughly 1Hz.
 - `GET /metrics` - Prometheus exposition.
@@ -774,6 +776,54 @@ Returns service/device capability metadata, including detected accelerator metad
 }
 ```
 
+#### `GET /api/v1/hardware`
+
+Returns the additive hardware identity and capability registry. This endpoint is intended for scripts, dashboards, and future UI surfaces that need to decide which sensors are meaningful on the current host before selecting metrics.
+
+The registry reports CPU identity from CPUID/Windows topology and GPU identity from DXGI plus current provider evidence. It separates make/model/topology from telemetry capability, and it labels capability quality/status instead of treating unsupported sensors as zero.
+
+```json
+{
+  "schema": "telemetryapp.hardware_inventory.v1",
+  "truth_model": "identity first, provider availability second, metric capability third; unsupported is never encoded as a valid zero",
+  "cpus": [
+    {
+      "component_id": "cpu0",
+      "class": "cpu",
+      "vendor": "GenuineIntel",
+      "name": "Intel(R) Core(TM) ...",
+      "logical_processors": 32,
+      "physical_cores": 16,
+      "instruction_sets": {
+        "avx2": true,
+        "avx512f": false,
+        "amx_tile": false
+      },
+      "capabilities": {
+        "usage": { "quality": "measured", "status": "valid" },
+        "temperature": { "quality": "unavailable", "status": "unsupported" },
+        "package_power": { "quality": "unavailable", "status": "unsupported" }
+      }
+    }
+  ],
+  "gpus": [
+    {
+      "component_id": "gpu0",
+      "class": "gpu",
+      "vendor": "NVIDIA",
+      "vendor_id": "0x10DE",
+      "device_id": "0x....",
+      "provider_preference": "NVML + DXGI",
+      "capabilities": {
+        "temperature": { "quality": "measured", "status": "valid" },
+        "power_watts": { "quality": "measured", "status": "valid" },
+        "nvidia_tensor_cores": { "quality": "inferred", "status": "valid" }
+      }
+    }
+  ]
+}
+```
+
 #### `GET /api/v1/metrics/catalog`
 
 Returns stable metric IDs and common metric names. Accelerator-related GPU 0 entries include:
@@ -1011,7 +1061,7 @@ The service has vendor-specific GPU detection paths plus Windows PDH fallback:
 - Intel: IGCL path where available.
 - Windows fallback: PDH GPU Engine counters for broad GPU utilization when vendor SDKs are unavailable.
 
-NVIDIA CUDA/tensor capability metadata is exposed through the GPU snapshot and capabilities API when NVML reports an active adapter. Non-NVIDIA accelerator metadata should be treated as present but less granular until a dedicated Accelerator Inventory surface is completed.
+NVIDIA CUDA/tensor capability metadata is exposed through the GPU snapshot, capabilities API, and `/api/v1/hardware` when NVML reports an active adapter. Non-NVIDIA accelerator metadata is represented in `/api/v1/hardware` as provider-specific capability candidates: AMD matrix/CDNA/RDNA/XDNA support and Intel XMX/DPAS support must not be labeled as NVIDIA tensor cores, and remain `not_implemented` until AMD SMI/ADLX and Level Zero Sysman/static architecture mapping are added.
 
 ---
 

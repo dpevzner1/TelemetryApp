@@ -12,6 +12,7 @@ set(SERVICE_SOURCES
     validation.cpp
     api_key_store.cpp
     log_session.cpp
+    hardware_registry.cpp
     sensors/cpu.cpp
     sensors/memory.cpp
     sensors/gpu.cpp
@@ -47,6 +48,7 @@ set(TELEMETRY_SERVICE_LIBS
     kernel32.lib
     user32.lib
     ole32.lib
+    dxgi.lib
 )
 
 if(httplib_FOUND)

@@ -277,10 +277,11 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "## AI / Script Immediate Use Contract\n\n";
     f << "A script or another AI tool can use TelemetryApp immediately with this sequence:\n\n";
     f << "1. Call `GET /api/v1/health` to confirm the service is reachable.\n";
-    f << "2. Call `GET /api/v1/metrics/catalog` to map stable metric IDs.\n";
-    f << "3. Optionally call `POST /api/v1/watch` to add a process by `pid` or `exe_name`.\n";
-    f << "4. Call `POST /api/v1/sessions` with `label`, optional absolute `log_dir`, and optional `metric_ids`.\n";
-    f << "5. Run the workload.\n";
+    f << "2. Call `GET /api/v1/hardware` to identify CPU/GPU make, model, topology, and supported capability quality.\n";
+    f << "3. Call `GET /api/v1/metrics/catalog` to map stable metric IDs.\n";
+    f << "4. Optionally call `POST /api/v1/watch` to add a process by `pid` or `exe_name`.\n";
+    f << "5. Call `POST /api/v1/sessions` with `label`, optional absolute `log_dir`, and optional `metric_ids`.\n";
+    f << "6. Run the workload.\n";
     f << "6. Call `POST /api/v1/sessions/<id>/stop` and read the returned `log_path`.\n\n";
     f << "Session logs are JSONL files named `sess-<id>.jsonl`; metadata is stored as `sess-<id>.meta.json`. If `log_dir` is omitted, files go to `%TELEMETRY_DATA_DIR%\\logs\\sessions\\`. If `log_dir` is supplied, it must be an absolute Windows path and the service account must have write access.\n\n";
     f << "Current remote fleet truth: local sessions are live; discovered sensors can be explicitly enrolled for lab snapshot/logging workflows; heartbeat/call-home updates changed sensor IP addresses by stable identity. Sensor-client installs cannot discover, poll, or manage other devices.\n\n";
@@ -295,6 +296,7 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "| GET | `/api/v1/health` | None | Service liveness + poll duration |\n";
     f << "| GET | `/metrics` | None | Prometheus text exposition format |\n";
     f << "| GET | `/api/v1/capabilities` | Required | Service, device, and accelerator capabilities |\n";
+    f << "| GET | `/api/v1/hardware` | Required | Hardware identity registry: CPU/GPU make, model, topology, provider preference, and per-device capability status |\n";
     f << "| GET | `/api/v1/metrics/catalog` | Required | Stable metric IDs and common metric names |\n";
     f << "| GET | `/api/v1/diagnostics` | Required | Service diagnostics and runtime counters |\n";
     f << "| GET | `/api/v1/enrollment/readiness` | None | Non-secret sensor readiness metadata for manual add/candidate discovery |\n";
@@ -329,6 +331,7 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "| `tensor_core_gen` | Inferred tensor-core generation from CUDA compute capability |\n\n";
 
     f << "`GET /api/v1/capabilities` returns an `accelerators[]` array containing adapter name, tensor-core inference, CUDA compute capability, tensor-core generation, and the metric IDs for SM and memory-bandwidth utilization.\n\n";
+    f << "`GET /api/v1/hardware` is the richer hardware identity registry. It reports CPU vendor/model/family/stepping, logical and physical topology where Windows exposes it, cache topology, CPU instruction sets, DXGI GPU vendor/device IDs, adapter memory, current provider preference, and per-device capability objects. Capability objects distinguish `measured`, `derived`, `inferred`, `unavailable`, `unsupported`, and `not_implemented`; unsupported values must not be interpreted as zero.\n\n";
 
     f << "## Power / Electrical Telemetry\n\n";
     f << "`GET /api/v1/snapshot` includes a root `power` object. Electrical values are source-qualified and must be interpreted by `quality`:\n\n";
@@ -384,6 +387,8 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "curl -H \"X-API-Key: <key>\" " << service_url << "/api/v1/snapshot\n\n";
     f << "# Device and accelerator capabilities\n";
     f << "curl -H \"X-API-Key: <key>\" " << service_url << "/api/v1/capabilities\n\n";
+    f << "# Hardware make/model/topology/capability registry\n";
+    f << "curl -H \"X-API-Key: <key>\" " << service_url << "/api/v1/hardware\n\n";
     f << "# Stable metric catalog\n";
     f << "curl -H \"X-API-Key: <key>\" " << service_url << "/api/v1/metrics/catalog\n\n";
     f << "# Start a logging session\n";
