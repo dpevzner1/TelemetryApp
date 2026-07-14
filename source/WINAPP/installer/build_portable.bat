@@ -38,6 +38,13 @@ copy "%ROOT_DIR%\README.md" "%DIST_DIR%\" >nul
 if errorlevel 1 ( echo [ERROR] README.md not found in %ROOT_DIR% & exit /b 1 )
 if exist "%ROOT_DIR%\LICENSE" copy "%ROOT_DIR%\LICENSE" "%DIST_DIR%\" >nul
 
+mkdir "%DIST_DIR%\tools" >nul 2>nul
+copy "%ROOT_DIR%\tools\validate_release_manifest.ps1" "%DIST_DIR%\tools\" >nul
+if errorlevel 1 (
+    echo [ERROR] validate_release_manifest.ps1 not found in %ROOT_DIR%\tools
+    exit /b 1
+)
+
 copy "%BIN_DIR%\API.md" "%DIST_DIR%\" >nul
 if errorlevel 1 (
     echo [ERROR] API.md not found in %BIN_DIR%

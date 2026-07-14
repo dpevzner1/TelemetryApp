@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include "settings_page.h"
+#include "../../shared/app_version.h"
 #include <d2d1_1helper.h>
 #include <cstring>
 #include <cstdio>
@@ -18,6 +19,13 @@ static constexpr D2D1_COLOR_F kBlue   = {0.25f, 0.60f, 1.00f, 1.0f};
 static constexpr D2D1_COLOR_F kBorder = {0.22f, 0.22f, 0.26f, 1.0f};
 
 SettingsPage::SettingsPage(D2DContext& ctx) : m_ctx(ctx) {}
+
+static std::wstring WidenAscii(const char* s) {
+    std::wstring out;
+    if (!s) return out;
+    while (*s) out.push_back(static_cast<unsigned char>(*s++));
+    return out;
+}
 
 void SettingsPage::DrawSection(float x, float& y, float w, const wchar_t* title) {
     m_ctx.DC()->DrawLine({x + 20, y + 8}, {x + w - 20, y + 8},
@@ -188,7 +196,9 @@ void SettingsPage::Draw(float x, float y, float w, float h, float /*dpi*/) {
     cy += 40;
 
     DrawSection(x, cy, w, L"ABOUT");
-    m_ctx.DrawText(L"TelemetryApp v1.0.0 - native Windows telemetry monitor for live dashboards, HUD, API capture, Prometheus, SSE, and JSONL process-run logs.",
+    std::wstring about = L"TelemetryApp v" + WidenAscii(TelemetryApp::APP_VERSION) +
+        L" - native Windows telemetry monitor for live dashboards, HUD, API capture, Prometheus, SSE, and JSONL process-run logs.";
+    m_ctx.DrawText(about.c_str(),
         {x + 20, cy, x + w - 20, cy + 18}, kText, 10.0f);
     cy += 18;
     m_ctx.DrawText(L"Created by Demit Pevzner - MIT License - https://github.com/dpevzner1/TelemetryApp - demitri.pevzner@gmail.com",
@@ -201,7 +211,9 @@ void SettingsPage::Draw(float x, float y, float w, float h, float /*dpi*/) {
     cy += 44;
 
     // App version footer
-    m_ctx.DrawText(L"TelemetryApp v1.0.0 - MIT License - Demit Pevzner 2026 - github.com/dpevzner1/TelemetryApp",
+    std::wstring footer = L"TelemetryApp v" + WidenAscii(TelemetryApp::APP_VERSION) +
+        L" - MIT License - Demit Pevzner 2026 - github.com/dpevzner1/TelemetryApp";
+    m_ctx.DrawText(footer.c_str(),
         {x + 20, y + h - 28, x + w - 20, y + h - 8}, kDim, 9.0f);
 }
 

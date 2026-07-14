@@ -9,7 +9,7 @@ SetCompressor /SOLID lzma
 
 ; ── Product metadata ──────────────────────────────────────────────────────────
 !define PRODUCT_NAME       "TelemetryApp"
-!define PRODUCT_VERSION    "1.0.0"
+!define PRODUCT_VERSION    "1.0.1"
 !define PRODUCT_PUBLISHER  "Demit Pevzner"
 !define PRODUCT_URL        "https://github.com/dpevzner1/TelemetryApp"
 !define PRODUCT_CONTACT    "demitri.pevzner@gmail.com"
@@ -62,6 +62,9 @@ Var START_AUTO_RADIO
 Var START_MANUAL_RADIO
 Var EXISTING_INSTALL_DIR
 Var EXISTING_UNINSTALLER
+Var EXISTING_INSTALL_MODE
+Var EXISTING_VERSION
+Var REQUESTED_INSTALL_MODE
 Var MAINT_ACTION
 Var MAINT_REPAIR_RADIO
 Var MAINT_UNINSTALL_RADIO
@@ -144,7 +147,10 @@ FunctionEnd
 Function .onInit
     SetRegView 64
     ${GetParameters} $R0
-    StrCpy $INSTALL_MODE "LocalMonitor"
+    StrCpy $INSTALL_MODE ""
+    StrCpy $REQUESTED_INSTALL_MODE ""
+    StrCpy $EXISTING_INSTALL_MODE ""
+    StrCpy $EXISTING_VERSION ""
     StrCpy $HOST_URL ""
     StrCpy $START_MODE "Auto"
     StrCpy $MAINT_ACTION "Install"
@@ -154,25 +160,32 @@ Function .onInit
     StrCpy $REMOTE_API_ENABLED "0"
     StrCpy $FIREWALL_RULES_ENABLED "1"
     StrCpy $FIREWALL_OPTION ""
-    ${GetOptions} "$R0" "/ROLE=" $INSTALL_MODE
-    ${GetOptions} "$R0" "/MODE=" $INSTALL_MODE
+    ${GetOptions} "$R0" "/ROLE=" $REQUESTED_INSTALL_MODE
+    ${GetOptions} "$R0" "/MODE=" $REQUESTED_INSTALL_MODE
     ${GetOptions} "$R0" "/HOST=" $HOST_URL
     ${GetOptions} "$R0" "/START=" $START_MODE
     ${GetOptions} "$R0" "/REMOTE_API=" $REMOTE_API_ENABLED
     ${GetOptions} "$R0" "/FIREWALL=" $FIREWALL_OPTION
     ${GetOptions} "$R0" "/ACTION=" $MAINT_ACTION
-    ${If} $INSTALL_MODE == "FullHost"
+    ${If} $REQUESTED_INSTALL_MODE == "FullHost"
         ; Backward compatibility: old FullHost meant local app/service/API, not fleet management.
-        StrCpy $INSTALL_MODE "LocalMonitor"
+        StrCpy $REQUESTED_INSTALL_MODE "LocalMonitor"
     ${EndIf}
-    ${If} $INSTALL_MODE != "FleetHost"
-    ${AndIf} $INSTALL_MODE != "SensorClient"
-        StrCpy $INSTALL_MODE "LocalMonitor"
+    ${If} $REQUESTED_INSTALL_MODE != ""
+    ${AndIf} $REQUESTED_INSTALL_MODE != "FleetHost"
+    ${AndIf} $REQUESTED_INSTALL_MODE != "SensorClient"
+    ${AndIf} $REQUESTED_INSTALL_MODE != "LocalMonitor"
+        StrCpy $REQUESTED_INSTALL_MODE "LocalMonitor"
     ${EndIf}
     ReadRegStr $EXISTING_INSTALL_DIR HKLM "${REG_APP_KEY}" "InstallDir"
     ${If} $EXISTING_INSTALL_DIR == ""
         ReadRegStr $EXISTING_INSTALL_DIR HKLM "${PRODUCT_UNINST_KEY}" "InstallLocation"
     ${EndIf}
+    ReadRegStr $EXISTING_INSTALL_MODE HKLM "${REG_APP_KEY}" "InstallMode"
+    ${If} $EXISTING_INSTALL_MODE == ""
+        ReadRegStr $EXISTING_INSTALL_MODE HKLM "${REG_APP_KEY}" "InstallRole"
+    ${EndIf}
+    ReadRegStr $EXISTING_VERSION HKLM "${REG_APP_KEY}" "Version"
     ReadRegStr $EXISTING_UNINSTALLER HKLM "${PRODUCT_UNINST_KEY}" "UninstallString"
     ${If} $EXISTING_INSTALL_DIR == ""
         SetRegView 32
@@ -180,8 +193,28 @@ Function .onInit
         ${If} $EXISTING_INSTALL_DIR == ""
             ReadRegStr $EXISTING_INSTALL_DIR HKLM "${PRODUCT_UNINST_KEY}" "InstallLocation"
         ${EndIf}
+        ReadRegStr $EXISTING_INSTALL_MODE HKLM "${REG_APP_KEY}" "InstallMode"
+        ${If} $EXISTING_INSTALL_MODE == ""
+            ReadRegStr $EXISTING_INSTALL_MODE HKLM "${REG_APP_KEY}" "InstallRole"
+        ${EndIf}
+        ReadRegStr $EXISTING_VERSION HKLM "${REG_APP_KEY}" "Version"
         ReadRegStr $EXISTING_UNINSTALLER HKLM "${PRODUCT_UNINST_KEY}" "UninstallString"
         SetRegView 64
+    ${EndIf}
+    ${If} $EXISTING_INSTALL_MODE == "FullHost"
+        StrCpy $EXISTING_INSTALL_MODE "LocalMonitor"
+    ${EndIf}
+    ${If} $EXISTING_INSTALL_MODE != "FleetHost"
+    ${AndIf} $EXISTING_INSTALL_MODE != "SensorClient"
+    ${AndIf} $EXISTING_INSTALL_MODE != "LocalMonitor"
+        StrCpy $EXISTING_INSTALL_MODE ""
+    ${EndIf}
+    ${If} $REQUESTED_INSTALL_MODE != ""
+        StrCpy $INSTALL_MODE $REQUESTED_INSTALL_MODE
+    ${ElseIf} $EXISTING_INSTALL_MODE != ""
+        StrCpy $INSTALL_MODE $EXISTING_INSTALL_MODE
+    ${Else}
+        StrCpy $INSTALL_MODE "LocalMonitor"
     ${EndIf}
     ${If} $EXISTING_INSTALL_DIR != ""
         StrCpy $INSTDIR "$EXISTING_INSTALL_DIR"
@@ -248,21 +281,29 @@ Function MaintenancePageCreate
         Abort
     ${EndIf}
 
+    ${If} $EXISTING_VERSION == ""
+        StrCpy $EXISTING_VERSION "unknown"
+    ${EndIf}
+    ${If} $EXISTING_INSTALL_MODE == ""
+        StrCpy $EXISTING_INSTALL_MODE "LocalMonitor"
+    ${EndIf}
     ${NSD_CreateLabel} 0 0 100% 12u "Choose a maintenance action. Data, API keys, dashboards, and logs are preserved."
     Pop $0
 
-    ${NSD_CreateGroupBox} 0 20u 100% 96u "Existing installation"
+    ${NSD_CreateGroupBox} 0 20u 100% 108u "Existing installation"
     Pop $0
-    ${NSD_CreateLabel} 12u 36u 92% 10u "$EXISTING_INSTALL_DIR"
+    ${NSD_CreateLabel} 12u 34u 92% 10u "$EXISTING_INSTALL_DIR"
+    Pop $0
+    ${NSD_CreateLabel} 12u 48u 92% 10u "Detected package: $EXISTING_INSTALL_MODE   Installed version: $EXISTING_VERSION   Target version: ${PRODUCT_VERSION}"
     Pop $0
 
-    ${NSD_CreateRadioButton} 12u 56u 58% 10u "Update / repair / modify role"
+    ${NSD_CreateRadioButton} 12u 68u 58% 10u "Update / repair / modify role"
     Pop $MAINT_REPAIR_RADIO
-    ${NSD_CreateLabel} 34u 68u 88% 18u "Refresh files, registry, environment, shortcuts, service registration, deployment role, and startup behavior."
+    ${NSD_CreateLabel} 34u 80u 88% 18u "Refresh files, registry, environment, shortcuts, service registration, deployment role, and startup behavior."
     Pop $0
-    ${NSD_CreateRadioButton} 12u 92u 34% 10u "Uninstall"
+    ${NSD_CreateRadioButton} 12u 104u 34% 10u "Uninstall"
     Pop $MAINT_UNINSTALL_RADIO
-    ${NSD_CreateLabel} 34u 104u 88% 10u "Remove app and service; preserve local data and logs."
+    ${NSD_CreateLabel} 34u 116u 88% 10u "Remove app and service; preserve local data and logs."
     Pop $0
 
     ${If} $MAINT_ACTION == "Uninstall"
@@ -309,7 +350,11 @@ Function DeploymentRolePageCreate
         Abort
     ${EndIf}
 
-    ${NSD_CreateLabel} 0 0 100% 12u "Role changes are explicit. Sensor clients cannot manage other devices."
+    ${If} $EXISTING_INSTALL_DIR != ""
+        ${NSD_CreateLabel} 0 0 100% 12u "Detected current role: $EXISTING_INSTALL_MODE. Role changes are explicit and audited."
+    ${Else}
+        ${NSD_CreateLabel} 0 0 100% 12u "Role changes are explicit. Sensor clients cannot manage other devices."
+    ${EndIf}
     Pop $0
 
     ${NSD_CreateGroupBox} 0 20u 100% 118u "Install role"
@@ -504,6 +549,10 @@ Section "TelemetryApp (required)" SEC_MAIN
     File "${APP_BINDIR}\PROJECT_PROXIMITY_MATRIX.md"
     File "${APP_BINDIR}\WINAPP_UI_LAYOUT_HARNESS.md"
     File "${APP_BINDIR}\WINAPP_FIREWALL_POLICY_AUDIT.md"
+    CreateDirectory "$INSTDIR\tools"
+    SetOutPath "$INSTDIR\tools"
+    File "${APP_BINDIR}\tools\validate_release_manifest.ps1"
+    SetOutPath "$INSTDIR"
     File "${APP_BINDIR}\launch_client.bat"
     File "${APP_BINDIR}\launch_fleet_manager.bat"
     File "${APP_BINDIR}\launch_local_monitor.bat"
@@ -549,7 +598,10 @@ Section "TelemetryApp (required)" SEC_MAIN
     WriteRegStr   HKLM "${REG_APP_KEY}" "FirewallPolicyAuditPath" "$INSTDIR\WINAPP_FIREWALL_POLICY_AUDIT.md"
     WriteRegStr   HKLM "${REG_APP_KEY}" "InstallerVersion" "${PRODUCT_VERSION}"
     WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "LastAction" "$MAINT_ACTION"
+    WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "PreviousVersion" "$EXISTING_VERSION"
+    WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "PreviousInstallMode" "$EXISTING_INSTALL_MODE"
     WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "CurrentVersion" "${PRODUCT_VERSION}"
+    WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "CurrentInstallMode" "$INSTALL_MODE"
     WriteRegStr   HKLM "${REG_APP_KEY}\InstallAudit" "LastActionResult" "Success"
     WriteRegDWORD HKLM "${REG_APP_KEY}" "ApiPort"    8765
     WriteRegDWORD HKLM "${REG_APP_KEY}" "CanManageFleet" $CAN_MANAGE_FLEET

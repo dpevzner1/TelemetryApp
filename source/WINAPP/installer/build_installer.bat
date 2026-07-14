@@ -5,7 +5,7 @@ set "SCRIPT_DIR=%~dp0"
 set "ROOT_DIR=%SCRIPT_DIR%.."
 set "DIST_DIR=%ROOT_DIR%\dist\TelemetryApp_Portable"
 set "NSI_SCRIPT=%SCRIPT_DIR%installer.nsi"
-set "INSTALLER_EXE=%ROOT_DIR%\dist\TelemetryApp_Setup_1.0.0.exe"
+set "INSTALLER_EXE=%ROOT_DIR%\dist\TelemetryApp_Setup_1.0.1.exe"
 
 echo ============================================================
 echo  TelemetryApp -- Installer Build
@@ -23,6 +23,6 @@ if errorlevel 1 ( echo [ERROR] Installer build failed. & exit /b 1 )
 if not exist "%INSTALLER_EXE%" ( echo [ERROR] Installer output missing: %INSTALLER_EXE% & exit /b 1 )
 
 echo.
-echo  Installer created: %ROOT_DIR%\dist\TelemetryApp_Setup_1.0.0.exe
+echo  Installer created: %INSTALLER_EXE%
 echo ============================================================
 endlocal

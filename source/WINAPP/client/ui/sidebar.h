@@ -57,7 +57,7 @@ private:
     NavPage     m_active = NavPage::Dashboard;
     bool        m_fleet_visible = false;
     std::string m_product_role = "Local Monitor";
-    std::string m_product_version = "v1.0.0";
+    std::string m_product_version = "v0.0.0";
     OnNavCb     m_on_nav;
 
     struct ItemRect { float y0, y1; NavPage page; };
