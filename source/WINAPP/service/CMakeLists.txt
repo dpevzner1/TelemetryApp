@@ -23,6 +23,7 @@ set(SERVICE_SOURCES
     sensors/disk.cpp
     sensors/network.cpp
     sensors/temperatures.cpp
+    sensors/power.cpp
     ipc/shm_writer.cpp
     ipc/pipe_server.cpp
     ipc/http_server.cpp
@@ -43,6 +44,7 @@ set(TELEMETRY_SERVICE_LIBS
     pdh.lib
     psapi.lib
     iphlpapi.lib
+    powrprof.lib
     wbemuuid.lib
     advapi32.lib
     kernel32.lib

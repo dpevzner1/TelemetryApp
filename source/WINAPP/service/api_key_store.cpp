@@ -341,7 +341,7 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "| `derived` | Computed from measured samples, such as future session energy. |\n";
     f << "| `estimated` | Model-based approximation; not direct electrical measurement. |\n";
     f << "| `unavailable` | Provider not present, unsupported, or not implemented. |\n\n";
-    f << "Current implementation exposes source-qualified GPU power where available, CPU package power as unavailable until a CPU provider is added, platform power as unavailable unless a battery/external-meter provider is added, and per-process power as a future estimated attribution path.\n\n";
+    f << "Current implementation exposes source-qualified GPU power where available, CPU package power as unavailable until a CPU provider is added, platform power as `derived` when Windows reports battery discharge rate on a discharging battery, platform/wall power as `unavailable` on AC unless an external meter/PDU/BMC provider is added, and per-process power as a future estimated attribution path.\n\n";
     f << "`GET /metrics` includes `telemetry_cpu_package_power_watts` and `telemetry_platform_power_watts` with `source` and `quality` labels. GPU power metrics include `source` and `quality` labels when active GPU adapters are reported.\n\n";
 
     f << "## Enterprise Sensor Enrollment Contract\n\n";

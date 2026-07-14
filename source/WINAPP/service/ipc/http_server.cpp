@@ -19,6 +19,7 @@
 #include "../log_session.h"
 #include "../enterprise_config.h"
 #include "../hardware_registry.h"
+#include "../sensors/power.h"
 #include "../process_watcher/watcher.h"
 #include "../../shared/shm_layout.h"
 #include "../../shared/metric_ids.h"
@@ -131,6 +132,15 @@ static json PowerReading(double value,
     return j;
 }
 
+static json PowerReading(const Sensors::ReadingQuality& r) {
+    return PowerReading(r.value,
+                        r.unit.c_str(),
+                        r.source.c_str(),
+                        r.quality.c_str(),
+                        r.confidence.c_str(),
+                        r.reason.c_str());
+}
+
 static bool ContainsNoCase(const std::string& s, const char* needle) {
     std::string a = s;
     std::string b = needle ? needle : "";
@@ -170,35 +180,11 @@ static json GpuPowerReading(const std::string& name, double watts) {
 static json BuildPowerSnapshot(ShmBlock* shm) {
     json power;
 
-    SYSTEM_POWER_STATUS ps{};
-    if (GetSystemPowerStatus(&ps)) {
-        const char* ac = "unknown";
-        if (ps.ACLineStatus == 0) ac = "battery";
-        else if (ps.ACLineStatus == 1) ac = "ac";
-        power["system"]["ac_power_state"] =
-            PowerReading(ps.ACLineStatus, "state", "Windows SYSTEM_POWER_STATUS",
-                         ps.ACLineStatus == 255 ? "unavailable" : "measured",
-                         ps.ACLineStatus == 255 ? "none" : "high", ac);
-
-        if (ps.BatteryLifePercent <= 100) {
-            power["system"]["battery_percent"] =
-                PowerReading(ps.BatteryLifePercent, "%", "Windows SYSTEM_POWER_STATUS",
-                             "measured", "high", "");
-        } else {
-            power["system"]["battery_percent"] =
-                PowerReading(0.0, "%", "Windows SYSTEM_POWER_STATUS",
-                             "unavailable", "none", "No battery percentage reported");
-        }
-    } else {
-        power["system"]["ac_power_state"] =
-            PowerReading(0.0, "state", "Windows SYSTEM_POWER_STATUS",
-                         "unavailable", "none", "GetSystemPowerStatus failed");
-    }
-
-    power["system"]["platform_power_w"] =
-        PowerReading(0.0, "W", "Software-only platform provider",
-                     "unavailable", "none",
-                     "Whole-device wall power requires battery discharge telemetry or an external meter");
+    auto platform = Sensors::QueryPlatformPower();
+    power["system"]["ac_power_state"] = PowerReading(platform.ac_power_state);
+    power["system"]["battery_percent"] = PowerReading(platform.battery_percent);
+    power["system"]["battery_rate_w"] = PowerReading(platform.battery_rate_w);
+    power["system"]["platform_power_w"] = PowerReading(platform.platform_power_w);
 
     double cpu_pkg_w = shm ? shm->metrics[MetricId::CPU_PACKAGE_POWER_W].current : 0.0;
     power["cpu"]["package_power_w"] =
@@ -765,7 +751,7 @@ bool HttpServerInit() {
         j["power_telemetry"] = {
             {"truth_model", "measured > derived > estimated > unavailable"},
             {"cpu_package_power", shm && shm->metrics[MetricId::CPU_PACKAGE_POWER_W].current > 0.0 ? "measured" : "unavailable"},
-            {"platform_power", "unavailable_without_battery_discharge_or_external_meter"},
+            {"platform_power", "derived_on_battery_discharge_when_windows_reports_battery_rate; unavailable_on_ac_without_external_meter"},
             {"process_power", "future_estimated_attribution"}
         };
         j["auth"] = {"X-API-Key", "Authorization: Bearer", "api_key query parameter"};

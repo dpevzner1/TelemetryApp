@@ -241,7 +241,7 @@ Read `API.md` in the install root for the generated endpoint table and active ke
 - Sensor-client installs cannot discover, poll, or manage other devices.
 - A remote sensor will not appear in Fleet search unless its service is running, LAN/API binding is explicitly enabled during install/modify, and the network/firewall allows inbound TCP 8765 to the sensor. Discovery creates candidates only; it does not grant trust.
 - API transport encryption is planned for a later release. Current local builds use HTTP on `localhost` unless remote API binding is explicitly enabled.
-- Electrical/power telemetry is source-qualified. GPU watts may be measured where vendor APIs expose it; CPU package, platform, and per-process electrical attribution remain Day 2 work unless a reliable provider is present.
+- Electrical/power telemetry is source-qualified. GPU watts may be measured where vendor APIs expose it; platform power may be derived from Windows battery discharge telemetry on battery-powered devices; CPU package and per-process electrical attribution remain Day 2 work unless a reliable provider is present.
 - L1/L2/L3 cache topology and cache-utilization telemetry are Day 2/Day 3 features. Do not assume live cache utilization exists in this release.
 
 ---
@@ -667,7 +667,7 @@ The snapshot includes a root `power` object. Electrical readings are source-qual
 - `estimated` means a model-based approximation, not direct electrical measurement.
 - `unavailable` means the provider is absent, unsupported, or not implemented.
 
-Current power support exposes GPU watts where the GPU provider reports them, marks CPU package power unavailable until a CPU package-power provider is added, marks platform/wall power unavailable unless battery discharge telemetry or an external meter is available, and reserves per-process power for future estimated attribution.
+Current power support exposes GPU watts where the GPU provider reports them, marks CPU package power unavailable until a CPU package-power provider is added, derives `platform_power_w` from Windows battery discharge rate only when a battery is present and discharging, marks AC/wall power unavailable unless an external meter/PDU/BMC provider is available, and reserves per-process power for future estimated attribution.
 
 **Response (abbreviated):**
 ```json
@@ -868,7 +868,7 @@ sys_cpu_usage_percent 12.4
 # TYPE telemetry_cpu_package_power_watts gauge
 telemetry_cpu_package_power_watts{source="CPU package provider",quality="unavailable"} 0
 # TYPE telemetry_platform_power_watts gauge
-telemetry_platform_power_watts{source="Software-only platform provider",quality="unavailable"} 0
+telemetry_platform_power_watts{source="Battery discharge estimate",quality="derived"} 21.4
 # TYPE sys_gpu_usage_percent gauge
 sys_gpu_usage_percent{gpu="0",name="NVIDIA GeForce RTX 4070 Laptop GPU"} 87.3
 # TYPE sys_gpu_vram_percent gauge

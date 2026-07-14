@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "log_session.h"
+#include "sensors/power.h"
 #include "../shared/shm_layout.h"
 #include "../shared/metric_ids.h"
 
@@ -232,6 +233,15 @@ static json PowerReading(double value,
     return j;
 }
 
+static json PowerReading(const Sensors::ReadingQuality& r) {
+    return PowerReading(r.value,
+                        r.unit.c_str(),
+                        r.source.c_str(),
+                        r.quality.c_str(),
+                        r.confidence.c_str(),
+                        r.reason.c_str());
+}
+
 static bool ContainsNoCase(const std::string& s, const char* needle) {
     std::string a = s;
     std::string b = needle ? needle : "";
@@ -270,6 +280,12 @@ static json GpuPowerReading(const std::string& name, double watts) {
 
 static json BuildPowerRow(ShmBlock* shm) {
     json power;
+    auto platform = Sensors::QueryPlatformPower();
+    power["system"]["ac_power_state"] = PowerReading(platform.ac_power_state);
+    power["system"]["battery_percent"] = PowerReading(platform.battery_percent);
+    power["system"]["battery_rate_w"] = PowerReading(platform.battery_rate_w);
+    power["system"]["platform_power_w"] = PowerReading(platform.platform_power_w);
+
     double cpu_pkg_w = shm ? shm->metrics[MetricId::CPU_PACKAGE_POWER_W].current : 0.0;
     power["cpu"]["package_power_w"] =
         cpu_pkg_w > 0.0

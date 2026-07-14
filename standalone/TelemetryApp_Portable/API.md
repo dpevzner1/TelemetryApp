@@ -109,7 +109,7 @@ Current remote fleet truth: local sessions are live; discovered sensors can be c
 | `estimated` | Model-based approximation; not direct electrical measurement. |
 | `unavailable` | Provider not present, unsupported, or not implemented. |
 
-Current implementation exposes source-qualified GPU power where available, CPU package power as unavailable until a CPU provider is added, platform power as unavailable unless a battery/external-meter provider is added, and per-process power as a future estimated attribution path.
+Current implementation exposes source-qualified GPU power where available, CPU package power as unavailable until a CPU provider is added, platform power as `derived` when Windows reports battery discharge rate on a discharging battery, platform/wall power as `unavailable` on AC unless an external meter/PDU/BMC provider is added, and per-process power as a future estimated attribution path.
 
 `GET /metrics` includes `telemetry_cpu_package_power_watts` and `telemetry_platform_power_watts` with `source` and `quality` labels. GPU power metrics include `source` and `quality` labels when active GPU adapters are reported.
 
