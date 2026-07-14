@@ -345,7 +345,7 @@ bool AppWindow::InitD2DAndPages() {
     m_fleet_page     = new FleetPage(m_d2d);
     m_settings_page  = new SettingsPage(m_d2d);
     m_sidebar->SetFleetVisible(IsFleetHostInstall());
-    m_sidebar->SetProductIdentity(ProductRoleName(), std::string("v") + APP_VERSION);
+    m_sidebar->SetProductIdentity(ProductRoleName(), std::string("v") + TelemetryApp::APP_VERSION);
 
     m_sidebar->SetOnNav([this](NavPage p) {
         if (p == NavPage::Fleet && !IsFleetHostInstall()) p = NavPage::Dashboard;
@@ -1209,7 +1209,7 @@ std::string AppWindow::ProductRoleName() const {
 }
 
 std::wstring AppWindow::ProductWindowTitle() const {
-    std::string title = ProductDisplayName() + " v" + APP_VERSION;
+    std::string title = ProductDisplayName() + " v" + TelemetryApp::APP_VERSION;
     return std::wstring(title.begin(), title.end());
 }
 

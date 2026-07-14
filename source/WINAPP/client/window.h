@@ -18,10 +18,9 @@
 #include "config/dashboard_profile.h"
 #include "config/metric_catalog_model.h"
 #include "ipc/shm_reader.h"
+#include "../shared/app_version.h"
 
 namespace Client {
-
-static constexpr const char* APP_VERSION = "1.0.0";
 
 class AppWindow {
 public:

@@ -1,6 +1,6 @@
 # TelemetryApp — Native Windows System Telemetry Service
 
-> **Version: 1.0.0** | Build: 2026-07-07
+> **Version: 1.0.0** | Build: 2026-07-14 | Capability revision: `2026-07-14.day2-power`
 
 **A high-performance, low-overhead Windows telemetry service and real-time client built in native C++.**
 Designed for local lab monitoring, AI/ML training observation, data-processing workload capture, workstation maintenance, and structured telemetry export.
@@ -1188,7 +1188,7 @@ Calls `build_portable.bat`, then invokes `makensis.exe installer.nsi`. The insta
 - Installs `TelemetryService` as either an auto-start or demand-start Windows service
 - Detects an existing install and presents maintenance choices: update/repair, modify role/startup, or uninstall
 - Temporarily stops `TelemetryService`, `telemetry_service.exe`, `telemetry_client.exe`, and `TelemetryApp.exe` during install/update/repair/uninstall so locked executables can be replaced cleanly
-- The installer role page and running app header identify the active package as `TelemetryApp Local Monitor`, `TelemetryApp Fleet Manager`, or `TelemetryApp Sensor`, including the app version.
+- The installer role page and running app header identify the active package as `TelemetryApp Local Monitor`, `TelemetryApp Fleet Manager`, or `TelemetryApp Sensor`, including the app version. The service diagnostic log records the startup version, build date, capability revision, and docs bundle on each run. `/api/v1/capabilities` also returns this manifest under `app`.
 - New UI and installer changes are governed by the project UI layout harness in `docs/WINAPP_UI_LAYOUT_HARNESS.md`; clipped, compressed, overlapping, or footer-obstructed text is a release blocker.
 - Windows Defender Firewall policy, Microsoft-behavior assumptions, and validation commands are recorded in `docs/WINAPP_FIREWALL_POLICY_AUDIT.md` and bundled into the install root as `WINAPP_FIREWALL_POLICY_AUDIT.md`.
 - The installer requests administrator elevation and shows a dedicated Windows Defender Firewall permissions page. When enabled, setup applies grouped `TelemetryApp` firewall allow rules for TelemetryApp client/service outbound traffic on private/domain profiles. When LAN readiness/API binding is also enabled, setup applies an inbound private/domain TCP `8765` rule for `telemetry_service.exe` scoped to `LocalSubnet`; public networks remain closed. Repair/reinstall/modify can enable or disable rule management, and uninstall removes TelemetryApp rules.

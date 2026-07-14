@@ -14,6 +14,7 @@
 #include "diagnostic_log.h"
 #include "ipc/pipe_server.h"
 #include "ipc/http_server.h"
+#include "../shared/app_version.h"
 
 using namespace Service;
 
@@ -61,6 +62,11 @@ static std::string ExeDir() {
 
 static bool InitStores() {
     DiagnosticLogInfo("InitStores begin.");
+    DiagnosticLogInfo(std::string("TelemetryApp startup manifest: version=") +
+                      TelemetryApp::APP_VERSION +
+                      ", build_date=" + TelemetryApp::BUILD_DATE +
+                      ", capability_revision=" + TelemetryApp::CAPABILITY_REVISION);
+    DiagnosticLogInfo(std::string("TelemetryApp docs bundle: ") + TelemetryApp::DOCS_BUNDLE);
     std::string data_dir = ResolveDataDir();
     EnsureDir(data_dir);
     EnsureDir(data_dir + "\\api_keys");

@@ -24,6 +24,7 @@
 #include "../../shared/shm_layout.h"
 #include "../../shared/metric_ids.h"
 #include "../../shared/api_types.h"
+#include "../../shared/app_version.h"
 
 using json = nlohmann::json;
 
@@ -715,6 +716,13 @@ bool HttpServerInit() {
         if (!CheckAuth(req, res)) return;
         ShmBlock* shm = ShmGet();
         json j;
+        j["app"] = {
+            {"name", "TelemetryApp"},
+            {"version", TelemetryApp::APP_VERSION},
+            {"build_date", TelemetryApp::BUILD_DATE},
+            {"capability_revision", TelemetryApp::CAPABILITY_REVISION},
+            {"docs_bundle", TelemetryApp::DOCS_BUNDLE}
+        };
         j["shared_memory"] = shm != nullptr;
         j["service_alive"] = shm && shm->hdr.service_alive;
         j["active_cpu_cores"] = shm ? shm->hdr.active_cpu_cores : 0;
