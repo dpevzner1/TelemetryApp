@@ -17,7 +17,7 @@ namespace Client {
 struct HudMetric {
     uint32_t    metric_id;
     std::string label;      // short label e.g. "CPU"
-    std::string unit;       // "%" | "°C" | "MB/s"
+    std::string unit;       // "%" | "C" | "MB/s"
     float       warn_pct;   // fraction of y_max that triggers amber (0=disabled)
     float       crit_pct;   // fraction of y_max that triggers red   (0=disabled)
     float       y_max;

@@ -32,7 +32,7 @@ struct MetricPanel {
     int         grid_row_span   = 1;
     float       y_min           = 0.0f;
     float       y_max           = 100.0f;
-    std::string unit;           // "%", "MHz", "°C", "W", "MB", "MB/s", "/s", ""
+    std::string unit;           // "%", "MHz", "C", "W", "MB", "MB/s", "/s", ""
     int         history_samples = 300;     // how many samples to show in line graphs
 };
 

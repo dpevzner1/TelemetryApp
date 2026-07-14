@@ -4,6 +4,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <string>
 
 using json = nlohmann::json;
 using namespace std::chrono;
@@ -19,6 +20,27 @@ static std::string IsoNow() {
     char buf[32]{};
     strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_val);
     return buf;
+}
+
+static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+static std::string CleanUiText(std::string s) {
+    ReplaceAll(s, "\xC2\xB0""C", "C");
+    ReplaceAll(s, "\xC3\x82\xC2\xB0""C", "C");
+    ReplaceAll(s, "Â°C", "C");
+    ReplaceAll(s, "°C", "C");
+    ReplaceAll(s, "├C", "C");
+    ReplaceAll(s, "┬C", "C");
+    ReplaceAll(s, "ƒC", "C");
+    ReplaceAll(s, "\xEF\xBF\xBD", "");
+    return s;
 }
 
 const char* VizTypeName(VizType v) {
@@ -42,7 +64,7 @@ std::vector<VizType> AllowedVizTypes(const std::string& cluster, const std::stri
         return {VizType::LineGraph, VizType::ArcGauge, VizType::BarGauge,
                 VizType::Numeral, VizType::NumeralTrend};
     // Temperature
-    if (unit == "°C")
+    if (unit == "C")
         return {VizType::ArcGauge, VizType::LineGraph, VizType::Numeral, VizType::NumeralTrend};
     // Rate metrics
     if (unit == "MB/s" || unit == "/s" || unit == "IOPS")
@@ -116,7 +138,7 @@ DashboardProfile DashboardProfile::MakeDefault() {
 
     // ── GPU cluster (blue) — GPU 0 = metrics 96-127 ───────────────────────────
     add(96, "GPU Usage %",     "gpu", VizType::LineGraph,    "#40A0FF", 100,  "%",  4);
-    add(99, "GPU Temp °C",     "gpu", VizType::ArcGauge,     "#FF6060", 100,  "°C", 2);
+    add(99, "GPU Temp C",      "gpu", VizType::ArcGauge,     "#FF6060", 100,  "C",  2);
     add(100,"GPU Power W",     "gpu", VizType::LineGraph,     "#FFB84D", 300,  "W",  3);
     add(98, "VRAM %",          "gpu", VizType::ArcGauge,      "#40A0FF", 100,  "%",  3);
     add(97, "VRAM Used MB",    "gpu", VizType::BarGauge,      "#2080E0", 12288,"MB", 3);
@@ -143,10 +165,10 @@ DashboardProfile DashboardProfile::MakeDefault() {
     add(292,"Errors In",       "network", VizType::LedIndicator,"#FF4444", 1,    "bool", 2);
 
     // ── Temperatures cluster (red-orange) ─────────────────────────────────────
-    add(352,"Thermal Zone 0",  "temp", VizType::ArcGauge,   "#FF6633", 100, "°C",  3);
-    add(353,"Thermal Zone 1",  "temp", VizType::ArcGauge,   "#FF8844", 100, "°C",  3);
-    add(354,"Thermal Zone 2",  "temp", VizType::ArcGauge,   "#FFAA55", 100, "°C",  3);
-    add(355,"Thermal Zone 3",  "temp", VizType::ArcGauge,   "#FFCC66", 100, "°C",  3);
+    add(352,"Thermal Zone 0",  "temp", VizType::ArcGauge,   "#FF6633", 100, "C",   3);
+    add(353,"Thermal Zone 1",  "temp", VizType::ArcGauge,   "#FF8844", 100, "C",   3);
+    add(354,"Thermal Zone 2",  "temp", VizType::ArcGauge,   "#FFAA55", 100, "C",   3);
+    add(355,"Thermal Zone 3",  "temp", VizType::ArcGauge,   "#FFCC66", 100, "C",   3);
 
     // ── Self-monitoring (grey) ────────────────────────────────────────────────
     add(384,"Service CPU %",   "self", VizType::NumeralTrend,"#888888", 5,  "%",   3);
@@ -177,8 +199,8 @@ bool DashboardProfile::Load(const std::string& path) {
         for (auto& item : j["panels"]) {
             MetricPanel mp;
             mp.metric_id     = item["metric_id"];
-            mp.label         = item["label"];
-            mp.cluster       = item["cluster"];
+            mp.label         = CleanUiText(item.value("label", ""));
+            mp.cluster       = CleanUiText(item.value("cluster", ""));
             mp.viz_type      = static_cast<VizType>(item["viz_type"].get<int>());
             mp.visible       = item.value("visible",   true);
             mp.logged        = item.value("logged",    true);
@@ -189,7 +211,7 @@ bool DashboardProfile::Load(const std::string& path) {
             mp.grid_row_span = item.value("grid_row_span", 1);
             mp.y_min         = item.value("y_min",     0.0f);
             mp.y_max         = item.value("y_max",     100.0f);
-            mp.unit          = item.value("unit",      "%");
+            mp.unit          = CleanUiText(item.value("unit",      "%"));
             mp.history_samples= item.value("history_samples", 300);
             panels.push_back(mp);
         }

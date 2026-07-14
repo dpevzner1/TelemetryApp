@@ -8,6 +8,27 @@ using json = nlohmann::json;
 
 namespace Client {
 
+static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::string::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+static std::string CleanUiText(std::string s) {
+    ReplaceAll(s, "\xC2\xB0""C", "C");
+    ReplaceAll(s, "\xC3\x82\xC2\xB0""C", "C");
+    ReplaceAll(s, "Â°C", "C");
+    ReplaceAll(s, "°C", "C");
+    ReplaceAll(s, "├C", "C");
+    ReplaceAll(s, "┬C", "C");
+    ReplaceAll(s, "ƒC", "C");
+    ReplaceAll(s, "\xEF\xBF\xBD", "");
+    return s;
+}
+
 static int DefaultIntervalForCluster(const std::string& cluster) {
     if (cluster == "temp" || cluster == "memory") return 10;
     if (cluster == "process" || cluster == "self") return 1;
@@ -37,9 +58,9 @@ void MetricCatalogModel::BuildFromDashboard(const DashboardProfile& profile,
     for (const auto& panel : profile.panels) {
         MetricCatalogEntry entry;
         entry.metric_id = panel.metric_id;
-        entry.label = panel.label;
-        entry.cluster = panel.cluster;
-        entry.unit = panel.unit;
+        entry.label = CleanUiText(panel.label);
+        entry.cluster = CleanUiText(panel.cluster);
+        entry.unit = CleanUiText(panel.unit);
         entry.viz_type = panel.viz_type;
         entry.dashboard = panel.visible;
         entry.hud = hud.count(panel.metric_id) != 0;
@@ -116,9 +137,9 @@ bool MetricCatalogModel::Load(const std::string& path) {
         for (const auto& item : j.value("entries", json::array())) {
             MetricCatalogEntry entry;
             entry.metric_id = item.value("metric_id", 0u);
-            entry.label = item.value("label", "");
-            entry.cluster = item.value("cluster", "");
-            entry.unit = item.value("unit", "");
+            entry.label = CleanUiText(item.value("label", ""));
+            entry.cluster = CleanUiText(item.value("cluster", ""));
+            entry.unit = CleanUiText(item.value("unit", ""));
             entry.viz_type = static_cast<VizType>(item.value("viz_type", 0));
             entry.dashboard = item.value("dashboard", true);
             entry.hud = item.value("hud", false);

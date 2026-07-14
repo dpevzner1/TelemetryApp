@@ -23,7 +23,7 @@ void PanelLayout::Init(D2DContext* ctx, UINT w, UINT h) {
     m_mem_gauge      = {L"Memory",     L"%",   0, 0, 100, 0, true, ctx->br_wave_mem.Get()};
     m_vram_gauge     = {L"VRAM",       L"%",   0, 0, 100, 0, true, ctx->br_wave_gpu.Get()};
     m_gpu_power_gauge= {L"GPU Power",  L"W",   0, 0, 300, 0, true, ctx->br_wave_gpu.Get()};
-    m_temp_gauge     = {L"CPU Temp",   L"°C",  0, 0, 100, 0, true, ctx->br_wave_cpu.Get()};
+    m_temp_gauge     = {L"CPU Temp",   L"C",   0, 0, 100, 0, true, ctx->br_wave_cpu.Get()};
     m_self_gauge     = {L"Self CPU",   L"%",   0, 0,  10, 1, true, ctx->br_accent.Get()};
 }
 

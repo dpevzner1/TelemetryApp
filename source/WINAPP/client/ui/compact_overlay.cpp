@@ -84,11 +84,11 @@ std::vector<HudMetric> MakeDefaultHudMetrics() {
     return {
         {MetricId::CPU_USAGE_TOTAL,      "CPU",   "%",    0.70f, 0.90f, 100.0f},
         {MetricId::MEM_PERCENT,          "RAM",   "%",    0.75f, 0.90f, 100.0f},
-        {MetricId::CPU_PACKAGE_TEMP_C,   "CPU°",  "°C",   0.70f, 0.85f,  100.0f},
+        {MetricId::CPU_PACKAGE_TEMP_C,   "CPU T", "C",    0.70f, 0.85f,  100.0f},
         // GPU 0 metrics
         {gpu_metric(0, GpuOff::USAGE_PCT),"GPU",  "%",    0.70f, 0.90f, 100.0f},
         {gpu_metric(0, GpuOff::VRAM_PCT), "VRAM", "%",    0.80f, 0.95f, 100.0f},
-        {gpu_metric(0, GpuOff::TEMP_C),   "GPU°", "°C",   0.70f, 0.85f, 100.0f},
+        {gpu_metric(0, GpuOff::TEMP_C),   "GPU T","C",    0.70f, 0.85f, 100.0f},
         // Disk 0 read/write
         {disk_metric(0, DiskOff::READ_BYTES_S),  "DR", "MB/s", 0, 0, 2000.0f},
         {disk_metric(0, DiskOff::WRITE_BYTES_S), "DW", "MB/s", 0, 0, 2000.0f},
@@ -475,8 +475,8 @@ void CompactOverlay::DrawHorizontal() {
         char buf[24]{};
         if (m.unit == "MB/s" || m.unit == "KB/s")
             snprintf(buf, sizeof(buf), "%.0f", val);
-        else if (m.unit == "°C")
-            snprintf(buf, sizeof(buf), "%.0f°", val);
+        else if (m.unit == "C")
+            snprintf(buf, sizeof(buf), "%.0f C", val);
         else
             snprintf(buf, sizeof(buf), "%.0f%%", val);
         std::wstring wv = Utf8ToWide(buf);
