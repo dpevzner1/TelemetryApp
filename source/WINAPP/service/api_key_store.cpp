@@ -345,6 +345,13 @@ bool ApiKeyStore::GenerateApiMd(const std::string& service_url) const {
     f << "| `estimated` | Model-based approximation; not direct electrical measurement. |\n";
     f << "| `unavailable` | Provider not present, unsupported, or not implemented. |\n\n";
     f << "Current implementation exposes source-qualified GPU power where available, CPU package power as unavailable until a CPU provider is added, platform power as `derived` when Windows reports battery discharge rate on a discharging battery, platform/wall power as `unavailable` on AC unless an external meter/PDU/BMC provider is added, and per-process power as a future estimated attribution path.\n\n";
+    f << "Power/electrical shared-memory metric IDs are also exposed through `/api/v1/metrics/catalog`, `/api/v1/history/<id>`, session logging, and the dashboard:\n\n";
+    f << "| ID | Name | Unit | Meaning |\n";
+    f << "|----|------|------|---------|\n";
+    f << "| 393 | `platform_power` | watts | Platform power derived from Windows battery discharge rate when available |\n";
+    f << "| 394 | `battery_rate` | watts | Battery charge/discharge rate reported by Windows power APIs |\n";
+    f << "| 395 | `battery_percent` | percent | Battery charge percentage |\n";
+    f << "| 396 | `ac_power_state` | state | AC line status from Windows power APIs |\n\n";
     f << "`GET /metrics` includes `telemetry_cpu_package_power_watts` and `telemetry_platform_power_watts` with `source` and `quality` labels. GPU power metrics include `source` and `quality` labels when active GPU adapters are reported.\n\n";
 
     f << "## Enterprise Sensor Enrollment Contract\n\n";

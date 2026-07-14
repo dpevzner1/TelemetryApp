@@ -136,6 +136,12 @@ DashboardProfile DashboardProfile::MakeDefault() {
     add(69, "Swap Used (GB)",  "memory", VizType::BarGauge,     "#D4820A", 64,   "GB", 2);
     add(73, "Commit Total GB", "memory", VizType::NumeralTrend, "#BBBBBB", 256,  "GB", 2);
 
+    // Power cluster: source/quality truth is exposed in /api/v1/snapshot power.
+    add(393,"Platform Power W","power", VizType::LineGraph,    "#FFB84D", 300, "W",  3);
+    add(394,"Battery Rate W",  "power", VizType::NumeralTrend, "#FFD166", 150, "W",  3);
+    add(395,"Battery %",       "power", VizType::BarGauge,     "#70E000", 100, "%",  2);
+    add(396,"AC State",        "power", VizType::LedIndicator, "#4DCC66", 1,   "bool",2);
+
     // ── GPU cluster (blue) — GPU 0 = metrics 96-127 ───────────────────────────
     add(96, "GPU Usage %",     "gpu", VizType::LineGraph,    "#40A0FF", 100,  "%",  4);
     add(99, "GPU Temp C",      "gpu", VizType::ArcGauge,     "#FF6060", 100,  "C",  2);

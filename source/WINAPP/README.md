@@ -1,6 +1,6 @@
 # TelemetryApp — Native Windows System Telemetry Service
 
-> **Version: 1.0.2** | Build: 2026-07-14 | Capability revision: `2026-07-14.1.0.2-dashboard-scroll`
+> **Version: 1.0.3** | Build: 2026-07-14 | Capability revision: `2026-07-14.1.0.3-power-dashboard`
 
 **A high-performance, low-overhead Windows telemetry service and real-time client built in native C++.**
 Designed for local lab monitoring, AI/ML training observation, data-processing workload capture, workstation maintenance, and structured telemetry export.
@@ -241,7 +241,7 @@ Read `API.md` in the install root for the generated endpoint table and active ke
 - Sensor-client installs cannot discover, poll, or manage other devices.
 - A remote sensor will not appear in Fleet search unless its service is running, LAN/API binding is explicitly enabled during install/modify, and the network/firewall allows inbound TCP 8765 to the sensor. Discovery creates candidates only; it does not grant trust.
 - API transport encryption is planned for a later release. Current local builds use HTTP on `localhost` unless remote API binding is explicitly enabled.
-- Electrical/power telemetry is source-qualified. GPU watts may be measured where vendor APIs expose it; platform power may be derived from Windows battery discharge telemetry on battery-powered devices; CPU package and per-process electrical attribution remain Day 2 work unless a reliable provider is present.
+- Electrical/power telemetry is source-qualified. GPU watts may be measured where vendor APIs expose it; dashboard/API metric IDs `393-396` expose platform/battery/AC power status; platform power is derived from Windows battery discharge telemetry on discharging battery-powered devices; CPU package, AC wall power, AMD board watts, and per-process electrical attribution remain Day 2 work unless a reliable provider is present.
 - L1/L2/L3 cache topology and cache-utilization telemetry are Day 2/Day 3 features. Do not assume live cache utilization exists in this release.
 
 ---
@@ -606,7 +606,8 @@ ID Range    Subsystem         Count    Stride
 224–287     Disk              64       8 per device (8 devices max)
 288–351     Network           64       8 per NIC (8 NICs max)
 352–383     Temperatures      32       1 per sensor (32 sensors max)
-384–399     Self-monitoring   16       —
+384–392     Self-monitoring   9        —
+393–399     Power/electrical  7        —
 400–511     Process watcher   112      14 per watched process (8 max)
 ```
 
@@ -667,7 +668,7 @@ The snapshot includes a root `power` object. Electrical readings are source-qual
 - `estimated` means a model-based approximation, not direct electrical measurement.
 - `unavailable` means the provider is absent, unsupported, or not implemented.
 
-Current power support exposes GPU watts where the GPU provider reports them, marks CPU package power unavailable until a CPU package-power provider is added, derives `platform_power_w` from Windows battery discharge rate only when a battery is present and discharging, marks AC/wall power unavailable unless an external meter/PDU/BMC provider is available, and reserves per-process power for future estimated attribution.
+Current power support exposes GPU watts where the GPU provider reports them, marks CPU package power unavailable until a CPU package-power provider is added, exposes dashboard/API power metric IDs `393-396`, derives `platform_power_w` from Windows battery discharge rate only when a battery is present and discharging, marks AC/wall power unavailable unless an external meter/PDU/BMC provider is available, and reserves per-process power for future estimated attribution.
 
 **Response (abbreviated):**
 ```json
@@ -1191,6 +1192,7 @@ Calls `build_portable.bat`, then invokes `makensis.exe installer.nsi`. The insta
 - The installer role page and running app header identify the active package as `TelemetryApp Local Monitor`, `TelemetryApp Fleet Manager`, or `TelemetryApp Sensor`, including the app version. The service diagnostic log records the startup version, build date, capability revision, and docs bundle on each run. `/api/v1/capabilities` also returns this manifest under `app`.
 - On update/repair over an existing installation, setup detects the installed role (`LocalMonitor`, `FleetHost`, or `SensorClient`) and installed version from `HKLM\SOFTWARE\TelemetryApp`, defaults the role page to that existing package identity, and records previous/current version and role in `InstallAudit`.
 - Dashboard view uses a dedicated wide, modern scrollbar for large telemetry layouts. The rail supports wheel scrolling, page-click jumps, and thumb dragging; the dashboard keeps top controls fixed, reserves a right gutter for the scrollbar, clamps scroll bounds, and keeps visual hit-testing aligned with the scrolled content.
+- Dashboard, `/api/v1/metrics/catalog`, `/api/v1/history/<id>`, session logging, and Prometheus now expose source-qualified power/electrical metrics: platform power W, battery discharge/charge rate W, battery percent, and AC state. The API `power` object remains the source of truth for measured/derived/unavailable quality.
 - Release-control harness: each iterative release must keep `shared/app_version.h`, `installer/installer.nsi`, bundled README/API files, installer filename, and `SHA256SUMS.txt` consistent. Run `tools\validate_release_manifest.ps1` before publishing or pushing GitHub export.
 - New UI and installer changes are governed by the project UI layout harness in `docs/WINAPP_UI_LAYOUT_HARNESS.md`; clipped, compressed, overlapping, or footer-obstructed text is a release blocker.
 - Windows Defender Firewall policy, Microsoft-behavior assumptions, and validation commands are recorded in `docs/WINAPP_FIREWALL_POLICY_AUDIT.md` and bundled into the install root as `WINAPP_FIREWALL_POLICY_AUDIT.md`.
@@ -1202,13 +1204,13 @@ Calls `build_portable.bat`, then invokes `makensis.exe installer.nsi`. The insta
 Enterprise deployment inputs:
 
 ```powershell
-TelemetryApp_Setup_1.0.2.exe /MODE=LocalMonitor /START=Auto
-TelemetryApp_Setup_1.0.2.exe /MODE=FleetHost /START=Auto
-TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Auto /HOST=https://telemetry-host:8767
-TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Manual /HOST=https://telemetry-host:8767
-TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Auto /REMOTE_API=1 /FIREWALL=1
-TelemetryApp_Setup_1.0.2.exe /ACTION=Repair
-TelemetryApp_Setup_1.0.2.exe /ACTION=Uninstall
+TelemetryApp_Setup_1.0.3.exe /MODE=LocalMonitor /START=Auto
+TelemetryApp_Setup_1.0.3.exe /MODE=FleetHost /START=Auto
+TelemetryApp_Setup_1.0.3.exe /MODE=SensorClient /START=Auto /HOST=https://telemetry-host:8767
+TelemetryApp_Setup_1.0.3.exe /MODE=SensorClient /START=Manual /HOST=https://telemetry-host:8767
+TelemetryApp_Setup_1.0.3.exe /MODE=SensorClient /START=Auto /REMOTE_API=1 /FIREWALL=1
+TelemetryApp_Setup_1.0.3.exe /ACTION=Repair
+TelemetryApp_Setup_1.0.3.exe /ACTION=Uninstall
 ```
 
 `/MODE=` is written to `HKLM\SOFTWARE\TelemetryApp\InstallMode`, `HKLM\SOFTWARE\TelemetryApp\InstallRole`, `TELEMETRY_INSTALL_MODE`, `TELEMETRY_INSTALL_ROLE`, and the service config. `/ROLE=` is also accepted as an alias. `/START=` is written to `HKLM\SOFTWARE\TelemetryApp\ServiceStartMode`, `TELEMETRY_START_MODE`, and the service config. `/HOST=` is written to `HKLM\SOFTWARE\TelemetryApp\HostUrl`, `TELEMETRY_HOST_URL`, and the service config. `/REMOTE_API=1` writes `RemoteApiEnabled=1`, `TELEMETRY_REMOTE_API_ENABLED=1`, and `TELEMETRY_REMOTE_API=1`, causing the service to bind to `0.0.0.0` instead of `127.0.0.1` on the next service start. `/FIREWALL=1` allows setup to manage TelemetryApp Windows Defender Firewall rules; `/FIREWALL=0` removes existing TelemetryApp rules during repair/reinstall/modify and does not recreate them. These values are non-secret. Enrollment tokens and API secrets must not be persisted in registry, environment variables, or diagnostic logs.
@@ -1836,9 +1838,8 @@ GPU metric IDs follow this formula: `96 + (gpu_index × 32) + offset`
 | 96 | GPU 0 utilization % |
 | 97 | GPU 0 VRAM used MB |
 | 98 | GPU 0 VRAM total MB |
-| 99 | GPU 0 VRAM % |
-| 100 | GPU 0 temperature °C |
-| 101 | GPU 0 power W |
+| 99 | GPU 0 temperature °C |
+| 100 | GPU 0 power W |
 | 113 | GPU 0 VRAM % (alias via offset 17) |
 
 For GPU 1 add 32 (IDs 128–159), GPU 2 add 64 (IDs 160–191), GPU 3 add 96 (IDs 192–223).
@@ -1909,8 +1910,8 @@ sess = requests.post(f"{SERVICE}/api/v1/sessions", headers=HEADERS, json={
     "metric_ids": [
         0,    # CPU total %
         96,   # GPU 0 util %
-        100,  # GPU 0 temp °C
-        101,  # GPU 0 power W
+        99,   # GPU 0 temp °C
+        100,  # GPU 0 power W
         400,  # watch slot 0: process CPU %
         402,  # watch slot 0: process private MB
         409,  # watch slot 0: process GPU SM %
@@ -1926,13 +1927,22 @@ Each row:
             "400":82.4,"402":4096.0,"409":87.3,"411":142.0}}
 ```
 
-#### Self-Monitoring (IDs 384–399)
+#### Self-Monitoring (IDs 384–392)
 
 | ID | Metric | Unit |
 |---|---|---|
 | 384 | `SELF_CPU_PCT` | % | TelemetryApp service CPU usage |
 | 385 | `SELF_RSS_MB` | MB | Service resident set size |
 | 388 | `SELF_POLL_MS` | ms | Last poll cycle duration |
+
+#### Power / Electrical (IDs 393-399)
+
+| ID | Metric | Unit | Description |
+|---|---|---|---|
+| 393 | `POWER_PLATFORM_W` | W | Platform power derived from Windows battery discharge rate when available |
+| 394 | `POWER_BATTERY_RATE_W` | W | Battery charge/discharge rate reported by Windows power APIs |
+| 395 | `POWER_BATTERY_PERCENT` | % | Battery charge percentage |
+| 396 | `POWER_AC_STATE` | state | AC line status from Windows power APIs |
 
 ---
 

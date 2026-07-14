@@ -593,9 +593,11 @@ static std::string BuildPrometheus() {
         snprintf(lbl, sizeof(lbl), "source=\"CPU package provider\",quality=\"%s\"",
                  cpu_pkg_w > 0.0 ? "measured" : "unavailable");
         g("telemetry_cpu_package_power_watts", cpu_pkg_w, lbl);
-        g("telemetry_platform_power_watts",
-          0.0,
-          "source=\"Software-only platform provider\",quality=\"unavailable\"");
+        auto platform = Sensors::QueryPlatformPower();
+        snprintf(lbl, sizeof(lbl), "source=\"%s\",quality=\"%s\"",
+                 esc(platform.platform_power_w.source.c_str()).c_str(),
+                 esc(platform.platform_power_w.quality.c_str()).c_str());
+        g("telemetry_platform_power_watts", platform.platform_power_w.value, lbl);
     }
     g(PromName::MEM_TOTAL,    shm->metrics[MetricId::MEM_TOTAL_GB].current * 1024.0 * 1024.0 * 1024.0);
     g(PromName::MEM_USED,     shm->metrics[MetricId::MEM_USED_GB].current * 1024.0 * 1024.0 * 1024.0);
@@ -780,6 +782,10 @@ bool HttpServerInit() {
         add(MetricId::CPU_USAGE_TOTAL, "cpu_usage_total", "percent", "cpu");
         add(MetricId::CPU_FREQ_ACTUAL_MHZ, "cpu_freq_actual", "MHz", "cpu");
         add(MetricId::CPU_PACKAGE_POWER_W, "cpu_package_power", "watts", "power");
+        add(MetricId::POWER_PLATFORM_W, "platform_power", "watts", "power");
+        add(MetricId::POWER_BATTERY_RATE_W, "battery_rate", "watts", "power");
+        add(MetricId::POWER_BATTERY_PERCENT, "battery_percent", "percent", "power");
+        add(MetricId::POWER_AC_STATE, "ac_power_state", "state", "power");
         add(MetricId::MEM_TOTAL_GB, "memory_total", "GB", "memory");
         add(MetricId::MEM_USED_GB, "memory_used", "GB", "memory");
         add(MetricId::MEM_PERCENT, "memory_usage", "percent", "memory");

@@ -9,7 +9,7 @@ SetCompressor /SOLID lzma
 
 ; ── Product metadata ──────────────────────────────────────────────────────────
 !define PRODUCT_NAME       "TelemetryApp"
-!define PRODUCT_VERSION    "1.0.2"
+!define PRODUCT_VERSION    "1.0.3"
 !define PRODUCT_PUBLISHER  "Demit Pevzner"
 !define PRODUCT_URL        "https://github.com/dpevzner1/TelemetryApp"
 !define PRODUCT_CONTACT    "demitri.pevzner@gmail.com"

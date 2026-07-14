@@ -18,6 +18,7 @@
 #include "sensors/disk.h"
 #include "sensors/network.h"
 #include "sensors/temperatures.h"
+#include "sensors/power.h"
 #include "sensors/pdh_queries.h"
 #include "process_watcher/watcher.h"
 #include "ipc/shm_writer.h"
@@ -134,6 +135,8 @@ void PollLoopRun(std::atomic<bool>& stop) {
         std::vector<TempReading> temps;
         TempPoll(temps);
 
+        auto platform_power = QueryPlatformPower();
+
         GetWatcher().Poll(elapsed_sec);
 
         double self_cpu = GetSelfCpuPct(ft_sys, ft_usr);
@@ -248,6 +251,12 @@ void PollLoopRun(std::atomic<bool>& stop) {
                 ShmPush(shm, temp_metric(ti), temps[ti].celsius);
                 strncpy(shm->hdr.temp_name[ti], temps[ti].name.c_str(), SHM_TEMP_NAME_LEN - 1);
             }
+
+            // Electrical metrics: provider-qualified details are exposed in the API power object.
+            ShmPush(shm, MetricId::POWER_PLATFORM_W,      platform_power.platform_power_w.value);
+            ShmPush(shm, MetricId::POWER_BATTERY_RATE_W,  platform_power.battery_rate_w.value);
+            ShmPush(shm, MetricId::POWER_BATTERY_PERCENT, platform_power.battery_percent.value);
+            ShmPush(shm, MetricId::POWER_AC_STATE,        platform_power.ac_power_state.value);
 
             // Self-monitoring
             ShmPush(shm, MetricId::SELF_CPU_PCT, self_cpu);

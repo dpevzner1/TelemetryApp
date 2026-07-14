@@ -74,7 +74,11 @@ enum MetricId : uint32_t {
     SELF_DISK_WRITE_BYTES_S  = 390,
     SELF_THREADS             = 391,
     SELF_MEM_PCT             = 392,
-    // 393–399 reserved
+    POWER_PLATFORM_W         = 393,
+    POWER_BATTERY_RATE_W     = 394,
+    POWER_BATTERY_PERCENT    = 395,
+    POWER_AC_STATE           = 396,
+    // 397-399 reserved
 
     // ── Watched processes (400–511) — 8 slots × 14 metrics each ─────────────
     // Access via: watch_metric(slot_idx, WatchOff::*)
