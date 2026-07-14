@@ -46,6 +46,7 @@ public:
     void OnScroll(float delta);
     bool IsEditMode() const { return m_edit_mode; }
     bool IsEditScrollbarDragging() const { return m_edit_scroll_dragging; }
+    bool IsScrollbarDragging() const { return m_scroll_dragging; }
     bool ConsumeProfileSaveRequested();
 
     // Viz type dropdown for a metric (returns true if changed)
@@ -99,6 +100,16 @@ private:
     float m_scroll_y     = 0;
     float m_content_h    = 0;   // total rendered height
     float m_view_h       = 0;   // visible height
+    bool  m_scroll_dragging = false;
+    float m_scroll_drag_offset = 0.0f;
+    float m_scroll_rail_x0 = 0.0f;
+    float m_scroll_rail_y0 = 0.0f;
+    float m_scroll_rail_x1 = 0.0f;
+    float m_scroll_rail_y1 = 0.0f;
+    float m_scroll_thumb_x0 = 0.0f;
+    float m_scroll_thumb_y0 = 0.0f;
+    float m_scroll_thumb_x1 = 0.0f;
+    float m_scroll_thumb_y1 = 0.0f;
 
     // Per-frame layout
     float m_page_x = 0, m_page_y = 0, m_page_w = 0;
@@ -154,11 +165,14 @@ private:
     void DrawTopControls(float x, float y, float w);
     void DrawEditDrawer(float x, float y, float w, float h);
     void DrawSmallButton(float x, float y, float w, const wchar_t* label, int action, uint32_t metric_id = UINT32_MAX);
+    void DrawScrollbar(float x, float y, float w, float h);
     void DrawEditScrollbar(float x, float y, float w, float h);
+    void ClampScroll();
     void ClampEditScroll();
     void BeginEditSession();
     void CommitEditSession();
     void CancelEditSession();
+    void ScrollToThumbY(float y);
     void ScrollEditToThumbY(float y);
 
     void EnsureWaveform(uint32_t metric_id, int w, int h);

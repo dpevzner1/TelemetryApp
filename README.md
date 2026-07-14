@@ -6,7 +6,7 @@ This folder is a clean export staging area for the current native Windows Teleme
 
 - `source/WINAPP/` - open source native Windows application source, build scripts, installer script, README, and license.
 - `standalone/TelemetryApp_Portable/` - portable standalone runtime package built from the current source.
-- `installer/TelemetryApp_Setup_1.0.1.exe` - NSIS installer built from the current source and portable payload.
+- `installer/TelemetryApp_Setup_1.0.2.exe` - NSIS installer built from the current source and portable payload.
 - `screenshots/` - UI screenshots for the GitHub repository and release page.
 - `SHA256SUMS.txt` - checksums for the installer and primary standalone executables.
 
@@ -28,7 +28,7 @@ Recommended repository shape:
 TelemetryApp/
   source/WINAPP/
   standalone/TelemetryApp_Portable/
-  installer/TelemetryApp_Setup_1.0.1.exe
+  installer/TelemetryApp_Setup_1.0.2.exe
   screenshots/
   README.md
   SHA256SUMS.txt

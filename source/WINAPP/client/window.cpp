@@ -1356,7 +1356,7 @@ bool AppWindow::OnMouseDown(float x, float y, int /*btn*/) {
             SaveMetricCatalog();
             SyncPagesFromMetricCatalog();
         }
-        if (m_dashboard_page->IsEditScrollbarDragging()) SetCapture(m_hwnd);
+        if (m_dashboard_page->IsEditScrollbarDragging() || m_dashboard_page->IsScrollbarDragging()) SetCapture(m_hwnd);
         }
         break;
     case NavPage::Api:       m_api_page->OnClick(x, y);       break;

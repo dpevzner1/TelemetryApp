@@ -5,7 +5,7 @@ set "SCRIPT_DIR=%~dp0"
 set "ROOT_DIR=%SCRIPT_DIR%.."
 set "DIST_DIR=%ROOT_DIR%\dist\TelemetryApp_Portable"
 set "NSI_SCRIPT=%SCRIPT_DIR%installer.nsi"
-set "INSTALLER_EXE=%ROOT_DIR%\dist\TelemetryApp_Setup_1.0.1.exe"
+set "INSTALLER_EXE=%ROOT_DIR%\dist\TelemetryApp_Setup_1.0.2.exe"
 
 echo ============================================================
 echo  TelemetryApp -- Installer Build

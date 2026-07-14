@@ -1,6 +1,6 @@
 # TelemetryApp — Native Windows System Telemetry Service
 
-> **Version: 1.0.1** | Build: 2026-07-14 | Capability revision: `2026-07-14.1.0.1-release-control`
+> **Version: 1.0.2** | Build: 2026-07-14 | Capability revision: `2026-07-14.1.0.2-dashboard-scroll`
 
 **A high-performance, low-overhead Windows telemetry service and real-time client built in native C++.**
 Designed for local lab monitoring, AI/ML training observation, data-processing workload capture, workstation maintenance, and structured telemetry export.
@@ -1190,6 +1190,7 @@ Calls `build_portable.bat`, then invokes `makensis.exe installer.nsi`. The insta
 - Temporarily stops `TelemetryService`, `telemetry_service.exe`, `telemetry_client.exe`, and `TelemetryApp.exe` during install/update/repair/uninstall so locked executables can be replaced cleanly
 - The installer role page and running app header identify the active package as `TelemetryApp Local Monitor`, `TelemetryApp Fleet Manager`, or `TelemetryApp Sensor`, including the app version. The service diagnostic log records the startup version, build date, capability revision, and docs bundle on each run. `/api/v1/capabilities` also returns this manifest under `app`.
 - On update/repair over an existing installation, setup detects the installed role (`LocalMonitor`, `FleetHost`, or `SensorClient`) and installed version from `HKLM\SOFTWARE\TelemetryApp`, defaults the role page to that existing package identity, and records previous/current version and role in `InstallAudit`.
+- Dashboard view uses a dedicated wide, modern scrollbar for large telemetry layouts. The rail supports wheel scrolling, page-click jumps, and thumb dragging; the dashboard keeps top controls fixed, reserves a right gutter for the scrollbar, clamps scroll bounds, and keeps visual hit-testing aligned with the scrolled content.
 - Release-control harness: each iterative release must keep `shared/app_version.h`, `installer/installer.nsi`, bundled README/API files, installer filename, and `SHA256SUMS.txt` consistent. Run `tools\validate_release_manifest.ps1` before publishing or pushing GitHub export.
 - New UI and installer changes are governed by the project UI layout harness in `docs/WINAPP_UI_LAYOUT_HARNESS.md`; clipped, compressed, overlapping, or footer-obstructed text is a release blocker.
 - Windows Defender Firewall policy, Microsoft-behavior assumptions, and validation commands are recorded in `docs/WINAPP_FIREWALL_POLICY_AUDIT.md` and bundled into the install root as `WINAPP_FIREWALL_POLICY_AUDIT.md`.
@@ -1201,13 +1202,13 @@ Calls `build_portable.bat`, then invokes `makensis.exe installer.nsi`. The insta
 Enterprise deployment inputs:
 
 ```powershell
-TelemetryApp_Setup_1.0.1.exe /MODE=LocalMonitor /START=Auto
-TelemetryApp_Setup_1.0.1.exe /MODE=FleetHost /START=Auto
-TelemetryApp_Setup_1.0.1.exe /MODE=SensorClient /START=Auto /HOST=https://telemetry-host:8767
-TelemetryApp_Setup_1.0.1.exe /MODE=SensorClient /START=Manual /HOST=https://telemetry-host:8767
-TelemetryApp_Setup_1.0.1.exe /MODE=SensorClient /START=Auto /REMOTE_API=1 /FIREWALL=1
-TelemetryApp_Setup_1.0.1.exe /ACTION=Repair
-TelemetryApp_Setup_1.0.1.exe /ACTION=Uninstall
+TelemetryApp_Setup_1.0.2.exe /MODE=LocalMonitor /START=Auto
+TelemetryApp_Setup_1.0.2.exe /MODE=FleetHost /START=Auto
+TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Auto /HOST=https://telemetry-host:8767
+TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Manual /HOST=https://telemetry-host:8767
+TelemetryApp_Setup_1.0.2.exe /MODE=SensorClient /START=Auto /REMOTE_API=1 /FIREWALL=1
+TelemetryApp_Setup_1.0.2.exe /ACTION=Repair
+TelemetryApp_Setup_1.0.2.exe /ACTION=Uninstall
 ```
 
 `/MODE=` is written to `HKLM\SOFTWARE\TelemetryApp\InstallMode`, `HKLM\SOFTWARE\TelemetryApp\InstallRole`, `TELEMETRY_INSTALL_MODE`, `TELEMETRY_INSTALL_ROLE`, and the service config. `/ROLE=` is also accepted as an alias. `/START=` is written to `HKLM\SOFTWARE\TelemetryApp\ServiceStartMode`, `TELEMETRY_START_MODE`, and the service config. `/HOST=` is written to `HKLM\SOFTWARE\TelemetryApp\HostUrl`, `TELEMETRY_HOST_URL`, and the service config. `/REMOTE_API=1` writes `RemoteApiEnabled=1`, `TELEMETRY_REMOTE_API_ENABLED=1`, and `TELEMETRY_REMOTE_API=1`, causing the service to bind to `0.0.0.0` instead of `127.0.0.1` on the next service start. `/FIREWALL=1` allows setup to manage TelemetryApp Windows Defender Firewall rules; `/FIREWALL=0` removes existing TelemetryApp rules during repair/reinstall/modify and does not recreate them. These values are non-secret. Enrollment tokens and API secrets must not be persisted in registry, environment variables, or diagnostic logs.

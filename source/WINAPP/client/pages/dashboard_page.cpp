@@ -96,7 +96,8 @@ void DashboardPage::RebuildClusters() {
 // ── Draw ─────────────────────────────────────────────────────────────────────
 
 void DashboardPage::Draw(float x, float y, float w, float h, float /*dpi*/) {
-    m_page_x = x; m_page_y = y; m_page_w = w; m_view_h = h;
+    constexpr float kTopControlsH = 34.0f;
+    m_page_x = x; m_page_y = y; m_page_w = w; m_view_h = std::max(1.0f, h - kTopControlsH);
     m_panel_hits.clear();
     m_edit_hits.clear();
     auto* dc = m_ctx.DC();
@@ -107,8 +108,8 @@ void DashboardPage::Draw(float x, float y, float w, float h, float /*dpi*/) {
 
     DrawTopControls(x, y, w);
 
-    float content_w = m_edit_mode ? std::max(560.0f, w - m_edit_w - 12.0f) : w;
-    float cy = y + 34.0f - m_scroll_y;  // current draw Y (panel Y coordinate)
+    float content_w = m_edit_mode ? std::max(560.0f, w - m_edit_w - 12.0f) : w - 20.0f;
+    float cy = y + kTopControlsH - m_scroll_y;  // current draw Y (panel Y coordinate)
 
     if (!m_profile) {
         m_ctx.DrawText(L"No profile loaded", {x+20, y+40, x+w, y+80},
@@ -167,7 +168,9 @@ void DashboardPage::Draw(float x, float y, float w, float h, float /*dpi*/) {
         cy += 8.0f; // cluster bottom padding
     }
 
-    m_content_h = cy - (y - m_scroll_y) + m_scroll_y;
+    m_content_h = std::max(0.0f, (cy + m_scroll_y) - (y + kTopControlsH));
+    ClampScroll();
+    if (!m_edit_mode) DrawScrollbar(x, y + kTopControlsH, w, h - kTopControlsH);
     if (m_edit_mode) DrawEditDrawer(x + w - m_edit_w, y, m_edit_w, h);
     dc->PopAxisAlignedClip();
 }
@@ -629,6 +632,19 @@ void DashboardPage::OnClick(float x, float y) {
         return;
     }
 
+    if (!m_edit_mode &&
+        m_content_h > m_view_h + 1.0f &&
+        x >= m_scroll_rail_x0 && x <= m_scroll_rail_x1 &&
+        y >= m_scroll_rail_y0 && y <= m_scroll_rail_y1) {
+        if (y >= m_scroll_thumb_y0 && y <= m_scroll_thumb_y1) {
+            m_scroll_dragging = true;
+            m_scroll_drag_offset = y - m_scroll_thumb_y0;
+        } else {
+            ScrollToThumbY(y);
+        }
+        return;
+    }
+
     for (const auto& eh : m_edit_hits) {
         if (x < eh.x0 || x > eh.x1 || y < eh.y0 || y > eh.y1) continue;
         if (eh.action == EDIT_TOGGLE) { BeginEditSession(); return; }
@@ -688,9 +704,6 @@ void DashboardPage::OnClick(float x, float y) {
         return;
     }
 
-    // Map to content coords
-    float cy = y + m_scroll_y;
-
     if (x >= m_show_all_x && x <= m_show_all_x + m_show_all_w &&
         y >= m_show_all_y && y <= m_show_all_y + m_show_all_h && m_profile) {
         for (auto& mp : m_profile->panels) mp.visible = true;
@@ -699,11 +712,11 @@ void DashboardPage::OnClick(float x, float y) {
     }
 
     for (const auto& hit : m_panel_hits) {
-        if (x >= hit.x0 && x <= hit.x1 && cy >= hit.y0 && cy <= hit.y1) {
+        if (x >= hit.x0 && x <= hit.x1 && y >= hit.y0 && y <= hit.y1) {
             bool in_hide = x >= hit.x1 - 42.0f && x <= hit.x1 - 20.0f &&
-                           cy >= hit.y0 && cy <= hit.y0 + 24.0f;
+                           y >= hit.y0 && y <= hit.y0 + 24.0f;
             bool in_dropdown = x >= hit.x1 - 110.0f && x <= hit.x1 &&
-                               cy >= hit.y0 && cy <= hit.y0 + 24.0f;
+                               y >= hit.y0 && y <= hit.y0 + 24.0f;
             if ((!in_dropdown && !in_hide) || !m_profile) break;
 
             for (auto& mp : m_profile->panels) {
@@ -730,7 +743,7 @@ void DashboardPage::OnClick(float x, float y) {
     // Cluster header collapse?
     for (auto& hdr : m_clusters) {
         if (x >= m_page_x && x <= m_page_x + m_page_w &&
-            cy >= hdr.y0 && cy <= hdr.y1) {
+            y >= hdr.y0 && y <= hdr.y1) {
             hdr.collapsed = !hdr.collapsed;
             m_collapsed[hdr.cluster_id] = hdr.collapsed;
             return;
@@ -749,17 +762,62 @@ void DashboardPage::OnScroll(float delta) {
         return;
     }
     m_scroll_y -= delta * 40.0f;
+    ClampScroll();
+}
+
+void DashboardPage::OnMouseMove(float, float y) {
+    if (m_edit_scroll_dragging) {
+        ScrollEditToThumbY(y - m_edit_scroll_drag_offset);
+        return;
+    }
+    if (m_scroll_dragging) {
+        ScrollToThumbY(y - m_scroll_drag_offset);
+        return;
+    }
+}
+
+void DashboardPage::OnMouseUp() {
+    m_scroll_dragging = false;
+    m_edit_scroll_dragging = false;
+}
+
+void DashboardPage::ClampScroll() {
     float max_scroll = std::max(0.0f, m_content_h - m_view_h);
     m_scroll_y = std::clamp(m_scroll_y, 0.0f, max_scroll);
 }
 
-void DashboardPage::OnMouseMove(float, float y) {
-    if (!m_edit_scroll_dragging) return;
-    ScrollEditToThumbY(y - m_edit_scroll_drag_offset);
-}
+void DashboardPage::DrawScrollbar(float x, float y, float w, float h) {
+    m_scroll_rail_x0 = m_scroll_rail_y0 = m_scroll_rail_x1 = m_scroll_rail_y1 = 0.0f;
+    m_scroll_thumb_x0 = m_scroll_thumb_y0 = m_scroll_thumb_x1 = m_scroll_thumb_y1 = 0.0f;
+    if (m_content_h <= m_view_h + 1.0f || h <= 24.0f) return;
 
-void DashboardPage::OnMouseUp() {
-    m_edit_scroll_dragging = false;
+    auto* dc = m_ctx.DC();
+    float rail_w = 16.0f;
+    D2D1_RECT_F rail = {x + w - rail_w - 4.0f, y + 6.0f, x + w - 4.0f, y + h - 6.0f};
+    m_scroll_rail_x0 = rail.left;
+    m_scroll_rail_y0 = rail.top;
+    m_scroll_rail_x1 = rail.right;
+    m_scroll_rail_y1 = rail.bottom;
+
+    dc->FillRoundedRectangle(D2D1::RoundedRect(rail, 7, 7),
+        m_ctx.BrushSolid({0.07f, 0.07f, 0.09f, 0.96f}));
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(rail, 7, 7),
+        m_ctx.BrushSolid({0.20f, 0.42f, 0.70f, 0.85f}), 1.0f);
+
+    float track_h = rail.bottom - rail.top;
+    float thumb_h = std::clamp(track_h * (m_view_h / std::max(m_content_h, 1.0f)), 48.0f, track_h);
+    float max_scroll = std::max(1.0f, m_content_h - m_view_h);
+    float thumb_y = rail.top + (track_h - thumb_h) * (m_scroll_y / max_scroll);
+    D2D1_RECT_F thumb = {rail.left + 3.0f, thumb_y, rail.right - 3.0f, thumb_y + thumb_h};
+    m_scroll_thumb_x0 = thumb.left;
+    m_scroll_thumb_y0 = thumb.top;
+    m_scroll_thumb_x1 = thumb.right;
+    m_scroll_thumb_y1 = thumb.bottom;
+
+    dc->FillRoundedRectangle(D2D1::RoundedRect(thumb, 5, 5),
+        m_ctx.BrushSolid({0.25f, 0.62f, 1.00f, 0.96f}));
+    dc->DrawRoundedRectangle(D2D1::RoundedRect(thumb, 5, 5),
+        m_ctx.BrushSolid({0.60f, 0.82f, 1.00f, 0.90f}), 0.75f);
 }
 
 void DashboardPage::ClampEditScroll() {
@@ -827,6 +885,17 @@ void DashboardPage::CancelEditSession() {
     m_edit_scroll_dragging = false;
     RebuildClusters();
     m_profile_save_requested = false;
+}
+
+void DashboardPage::ScrollToThumbY(float y) {
+    if (m_content_h <= m_view_h + 1.0f) return;
+    float track_h = m_scroll_rail_y1 - m_scroll_rail_y0;
+    float thumb_h = m_scroll_thumb_y1 - m_scroll_thumb_y0;
+    float usable = std::max(1.0f, track_h - thumb_h);
+    float clamped_y = std::clamp(y, m_scroll_rail_y0, m_scroll_rail_y0 + usable);
+    float frac = (clamped_y - m_scroll_rail_y0) / usable;
+    m_scroll_y = frac * std::max(0.0f, m_content_h - m_view_h);
+    ClampScroll();
 }
 
 void DashboardPage::ScrollEditToThumbY(float y) {
